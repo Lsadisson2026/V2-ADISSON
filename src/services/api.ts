@@ -392,40 +392,15 @@ export async function getReports(startDate?: string, endDate?: string): Promise<
   });
   if (error) throw new Error(error.message);
 
-  const payments: any[]         = data?.payments         ?? [];
-  const activeContracts: any[]  = data?.activeContracts  ?? [];
-  const overdueContracts: any[] = data?.overdueContracts ?? [];
-
-  const totalReceived    = payments.reduce((s: number, p: any) => s + p.amount, 0);
-  const interestReceived = payments
-    .filter((p: any) => ['INTEREST', 'PARTIAL', 'ADVANCE_INTEREST'].includes(p.payment_type))
-    .reduce((s: number, p: any) => s + p.amount, 0);
-
-  // Agrupa pagamentos por cliente
-  const clientMap = new Map<number, any>();
-  const groupedPayments: any[] = [];
-  payments.slice(0, 50).forEach((p: any) => {
-    if (!clientMap.has(p.client_id)) {
-      const e = { client_id: p.client_id, client_name: p.client_name, total_amount: 0, payments: [] };
-      clientMap.set(p.client_id, e);
-      groupedPayments.push(e);
-    }
-    const e = clientMap.get(p.client_id);
-    e.payments.push(p);
-    e.total_amount += p.amount;
-  });
-
+  // A RPC já retorna tudo calculado e agrupado:
+  // { totalReceived, interestReceived, capitalReceived, recentPayments: [{client_id, client_name, total_amount, payments:[...]}] }
   return {
-    totalReceived,
-    interestReceived,
-    activeContracts:  activeContracts.length,
-    overdueContracts: overdueContracts.length,
-    recentPayments:   groupedPayments,
-    details: {
-      payments,
-      activeContracts,
-      overdueContracts,
-    },
+    totalReceived:    data?.totalReceived    ?? 0,
+    interestReceived: data?.interestReceived ?? 0,
+    capitalReceived:  data?.capitalReceived  ?? 0,
+    activeContracts:  data?.activeContracts  ?? 0,
+    overdueContracts: data?.overdueContracts ?? 0,
+    recentPayments:   data?.recentPayments   ?? [],
   };
 }
 export async function updateDueDate(contractId: number, newDate: string): Promise<void> {

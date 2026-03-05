@@ -406,43 +406,56 @@ const RenegotiateForm = ({ client, contracts, cycles, onSuccess, onClose }: { cl
 };
 
 // ── REPORTS ───────────────────────────────────────────────────
-const ReportsView = () => {
-  const [report, setReport] = useState<any>(null);
-  const [start, setStart]   = useState('');
-  const [end, setEnd]       = useState('');
-  const load = async () => { try{ setReport(await api.getReports(start||undefined,end||undefined)); }catch(e:any){alert(e.message);} };
-  useEffect(()=>{ load(); },[]);
+const ReportsView = ({ dashData, onOpenReport }: { dashData: any; onOpenReport:(t:'lucro'|'capital'|'a-receber')=>void }) => {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <h1 className="text-xl font-black text-white">Relatórios</h1>
-      <div className="grid grid-cols-2 gap-2"><input type="date" value={start} onChange={e=>setStart(e.target.value)} className={inp}/><input type="date" value={end} onChange={e=>setEnd(e.target.value)} className={inp}/></div>
-      <button onClick={load} className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-3 rounded-xl text-sm">Filtrar</button>
-      {report && <div className="grid grid-cols-2 gap-3">
-        {[{l:'Total Recebido',v:fmtBRL(report.totalReceived),c:'text-emerald-400',bg:'bg-emerald-500/10'},{l:'Juros Recebidos',v:fmtBRL(report.interestReceived),c:'text-blue-400',bg:'bg-blue-500/10'},{l:'Contratos Ativos',v:report.activeContracts,c:'text-amber-400',bg:'bg-amber-500/10'},{l:'Vencidos',v:report.overdueContracts,c:'text-red-400',bg:'bg-red-500/10'}].map(m=>(
-          <div key={m.l} className={`${m.bg} border border-white/[0.07] rounded-2xl p-4`}><p className="text-[9px] text-white/30 uppercase mb-1">{m.l}</p><p className={`text-lg font-black ${m.c}`}>{m.v}</p></div>
-        ))}
-      </div>}
-      {report?.recentPayments?.length > 0 && (
-        <div>
-          <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-3">Pagamentos Recentes</p>
-          {report.recentPayments.map((g:any)=>(
-            <div key={g.client_id} className={`${card} overflow-hidden mb-2`}>
-              <details><summary className="flex justify-between p-3 cursor-pointer list-none">
-                <span className="font-black text-white text-sm">{g.client_name}</span>
-                <div className="flex items-center gap-2"><span className="text-emerald-400 font-black text-sm">{fmtBRL(g.total_amount)}</span><ChevronDown size={13} className="text-white/30"/></div>
-              </summary>
-              <div className="px-3 pb-3 space-y-1 border-t border-white/[0.05]">
-                {g.payments.map((p:any)=>(
-                  <div key={p.id} className="flex justify-between text-xs py-1 border-b border-white/[0.04] last:border-0">
-                    <span className="text-white/40">{p.payment_type} · {format(new Date(p.created_at),'dd/MM/yy')}</span>
-                    <span className="text-white font-black">{fmtBRL(p.amount)}</span>
-                  </div>
-                ))}
-              </div></details>
-            </div>
-          ))}
+
+      {/* Capital na Rua — não clicável, só dado */}
+      <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-5">
+        <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Capital na Rua</p>
+        <p className="text-3xl font-black text-white">{fmtBRL(dashData?.metrics?.total_on_street||0)}</p>
+        <p className="text-xs text-white/25 mt-1">Total emprestado em contratos ativos</p>
+      </div>
+
+      {/* Lucro Recebido — clicável */}
+      <button onClick={()=>onOpenReport('lucro')}
+        className="w-full bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5 text-left active:scale-95 transition-transform">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1">Lucro Recebido</p>
+            <p className="text-3xl font-black text-white">{fmtBRL(dashData?.metrics?.total_interest_received||0)}</p>
+            <p className="text-xs text-white/25 mt-1">Hoje · toque para ver por cliente</p>
+          </div>
+          <div className="bg-emerald-500/20 rounded-xl px-3 py-1.5 text-xs font-black text-emerald-400 flex-shrink-0">Ver →</div>
         </div>
-      )}
+      </button>
+
+      {/* Lucro a Receber — clicável */}
+      <button onClick={()=>onOpenReport('a-receber')}
+        className="w-full bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 text-left active:scale-95 transition-transform">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">Lucro a Receber</p>
+            <p className="text-3xl font-black text-white">{fmtBRL(dashData?.metrics?.total_interest_to_receive||0)}</p>
+            <p className="text-xs text-white/25 mt-1">Todos os contratos ativos · toque para ver</p>
+          </div>
+          <div className="bg-amber-500/20 rounded-xl px-3 py-1.5 text-xs font-black text-amber-400 flex-shrink-0">Ver →</div>
+        </div>
+      </button>
+
+      {/* Capital Recebido — clicável */}
+      <button onClick={()=>onOpenReport('capital')}
+        className="w-full bg-purple-500/10 border border-purple-500/30 rounded-2xl p-5 text-left active:scale-95 transition-transform">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest mb-1">Capital Recebido</p>
+            <p className="text-3xl font-black text-white">{fmtBRL(dashData?.metrics?.total_capital_received||0)}</p>
+            <p className="text-xs text-white/25 mt-1">Amortizações de hoje · toque para ver</p>
+          </div>
+          <div className="bg-purple-500/20 rounded-xl px-3 py-1.5 text-xs font-black text-purple-400 flex-shrink-0">Ver →</div>
+        </div>
+      </button>
     </div>
   );
 };
@@ -627,6 +640,11 @@ export default function App() {
   const [newClientModal,setNewClientModal]     = useState(false);
   const [editClientModal,setEditClientModal]   = useState<Client|null>(null);
   const [deleteModal,setDeleteModal]   = useState<number|null>(null);
+  const [dueListModal,setDueListModal] = useState<'today'|'overdue'|null>(null);
+  const [reportModal,setReportModal]   = useState<'lucro'|'capital'|'a-receber'|null>(null);
+  const [reportFilter,setReportFilter] = useState<'dia'|'semana'|'mes'|'todos'>('mes');
+  const [reportClientFilter,setReportClientFilter] = useState('');
+  const [fullReport,setFullReport]     = useState<any>(null);
 
   useEffect(()=>{
     (async()=>{ const u=await api.getSession(); if(u) setUser(u); setLoading(false); })();
@@ -767,26 +785,38 @@ export default function App() {
           <div className="space-y-5">
             <div><h1 className="text-xl font-black text-white">Olá, {user.name.split(' ')[0]} 👋</h1><p className="text-white/30 text-sm">Resumo do portfólio</p></div>
             {user.role==='ADMIN'&&<button onClick={()=>setNewContractModal(true)} className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 text-sm shadow-xl shadow-blue-900/20"><PlusCircle size={17}/> Novo Empréstimo</button>}
+
+            {/* ── VENCENDO HOJE + ATRASADOS ── */}
             <div className="grid grid-cols-2 gap-3">
-              {[
-                {l:'Capital na Rua',    v:fmtBRL(dashData?.metrics?.total_on_street||0),           c:'text-blue-400',    bg:'bg-blue-500/10'   },
-                {l:'Lucro Recebido',    v:fmtBRL(dashData?.metrics?.total_interest_received||0),    c:'text-emerald-400', bg:'bg-emerald-500/10'},
-                {l:'Capital Recebido',  v:fmtBRL(dashData?.metrics?.total_capital_received||0),     c:'text-purple-400',  bg:'bg-purple-500/10' },
-                {l:'Lucro a Receber',   v:fmtBRL(dashData?.metrics?.total_interest_to_receive||0),  c:'text-amber-400',   bg:'bg-amber-500/10'  },
-              ].map(m=>(
-                <div key={m.l} className={`${m.bg} border border-white/[0.07] rounded-2xl p-4 cursor-pointer`} onClick={()=>setActiveTab('loans')}>
-                  <p className="text-[9px] text-white/30 uppercase tracking-wider mb-1">{m.l}</p><p className={`text-lg font-black ${m.c}`}>{m.v}</p>
-                </div>
-              ))}
+              {/* Vencendo Hoje */}
+              <button onClick={()=>setDueListModal('today')}
+                className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-left active:scale-95 transition-transform">
+                <p className="text-[9px] text-amber-400/70 uppercase tracking-wider font-black mb-1">Vencendo Hoje</p>
+                <p className="text-3xl font-black text-amber-400">{dashData?.today?.length||0}</p>
+                <p className="text-[10px] text-white/25 mt-1">cliente{(dashData?.today?.length||0)!==1?'s':''} · toque para ver</p>
+              </button>
+              {/* Atrasados */}
+              <button onClick={()=>setDueListModal('overdue')}
+                className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-left active:scale-95 transition-transform">
+                <p className="text-[9px] text-red-400/70 uppercase tracking-wider font-black mb-1">Atrasados</p>
+                <p className="text-3xl font-black text-red-400">{dashData?.overdue?.length||0}</p>
+                <p className="text-[10px] text-white/25 mt-1">cliente{(dashData?.overdue?.length||0)!==1?'s':''} · toque para ver</p>
+              </button>
             </div>
-            <div className={`${card} p-4`}>
-              <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-3">Vencimentos</p>
-              {[{l:'Hoje',n:dashData?.today?.length||0,c:'text-amber-400',f:'today'},{l:'Atrasados',n:dashData?.overdue?.length||0,c:'text-red-400',f:'overdue'},{l:'Programados',n:dashData?.scheduled?.length||0,c:'text-blue-400',f:'scheduled'}].map(r=>(
-                <button key={r.l} onClick={()=>{setActiveTab('loans');setLoanFilter(r.f as any);}} className="w-full flex justify-between items-center py-2.5 border-b border-white/[0.05] last:border-0">
-                  <span className="text-sm text-white/50">{r.l}</span><div className="flex items-center gap-1.5"><span className={`text-sm font-black ${r.c}`}>{r.n}</span><ArrowRight size={12} className="text-white/20"/></div>
-                </button>
-              ))}
-            </div>
+
+
+
+            {/* Agendados */}
+            <button onClick={()=>{setActiveTab('loans');setLoanFilter('scheduled');}} className={`${card} p-4 w-full flex justify-between items-center active:scale-95 transition-transform`}>
+              <div className="text-left">
+                <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Agendados</p>
+                <p className="text-sm text-white/40 mt-0.5">Próximos vencimentos</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-black text-blue-400">{dashData?.scheduled?.length||0}</span>
+                <ArrowRight size={14} className="text-white/20"/>
+              </div>
+            </button>
           </div>
         )}
 
@@ -829,7 +859,17 @@ export default function App() {
           </div>
         )}
 
-        {activeTab==='reports'    && <ReportsView/>}
+        {activeTab==='reports'    && <ReportsView dashData={dashData} onOpenReport={(t)=>{ 
+          setReportModal(t as any);
+          if (t !== 'a-receber') {
+            setReportFilter('mes');
+            const d = new Date();
+            const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
+            const s = firstDay.toISOString().split('T')[0];
+            const e = d.toISOString().split('T')[0];
+            api.getReports(s, e).then(setFullReport).catch(()=>{});
+          }
+        }}/>}
         {activeTab==='calculator' && user.role==='ADMIN' && <CalculatorView/>}
         {activeTab==='management' && user.role==='ADMIN' && <ManagementView user={user}/>}
       </main>
@@ -885,6 +925,216 @@ export default function App() {
             <button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-xl text-sm">SALVAR</button>
           </form>
         </Modal>}
+
+        {/* ── LISTA VENCENDO HOJE / ATRASADOS ─────────────────── */}
+        {dueListModal && (() => {
+          const isToday  = dueListModal === 'today';
+          const items    = isToday ? (dashData?.today||[]) : (dashData?.overdue||[]);
+          const title    = isToday ? 'Vencendo Hoje' : 'Clientes Atrasados';
+          const accentCls = isToday ? 'text-amber-400' : 'text-red-400';
+          const bgCls     = isToday ? 'bg-amber-500/10 border-amber-500/20' : 'bg-red-500/10 border-red-500/20';
+          return (
+            <Modal title={title} onClose={()=>setDueListModal(null)}>
+              <div className="space-y-2">
+                {items.length === 0
+                  ? <p className="text-center text-white/30 py-8 text-sm">Nenhum cliente {isToday?'vence hoje':'em atraso'}</p>
+                  : items.map((ic:any) => {
+                      const diasAtraso = !isToday ? Math.floor((Date.now()-new Date(ic.due_date).getTime())/86400000) : 0;
+                      return (
+                        <div key={ic.id} className={`${bgCls} border rounded-xl p-3`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-black text-white text-sm">{ic.client_name}</p>
+                              {!isToday && <p className="text-[10px] text-red-400/70 mt-0.5">{diasAtraso} dia{diasAtraso!==1?'s':''} em atraso</p>}
+                              {isToday  && <p className="text-[10px] text-white/30 mt-0.5">Vence: {format(parseDate(ic.due_date),'dd/MM/yyyy')}</p>}
+                            </div>
+                            <p className={`font-black text-sm ${accentCls}`}>{fmtBRL(ic.base_interest_amount)}</p>
+                          </div>
+                          {ic.client_phone && (
+                            <button onClick={()=>{
+                              const msg = `Olá ${ic.client_name}, passando para lembrar do pagamento de ${fmtBRL(ic.base_interest_amount)} vencido em ${format(parseDate(ic.due_date),'dd/MM/yyyy')}. 🙏`;
+                              window.open(`https://wa.me/55${ic.client_phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
+                            }} className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-white/[0.05] text-white/40 text-xs font-black">
+                              <Phone size={11}/> Cobrar via WhatsApp
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                }
+              </div>
+            </Modal>
+          );
+        })()}
+
+        {/* ── RELATÓRIO DE LUCRO ───────────────────────────────── */}
+        {reportModal && (() => {
+          const isLucro   = reportModal === 'lucro';
+          const isCapital = reportModal === 'capital';
+          const isAReceber = reportModal === 'a-receber';
+
+          const filters = [{k:'dia',l:'Hoje'},{k:'semana',l:'Semana'},{k:'mes',l:'Mês'},{k:'todos',l:'Todos'}] as const;
+          const today   = new Date();
+          const getRange = (f: string) => {
+            if(f==='dia')    return {s:format(today,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')};
+            if(f==='semana') { const d=new Date(today); d.setDate(d.getDate()-7); return {s:format(d,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')}; }
+            if(f==='mes')    { const d=new Date(today.getFullYear(),today.getMonth(),1); return {s:format(d,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')}; }
+            return {s:undefined as any,e:undefined as any};
+          };
+          const loadReport = async (f: string) => {
+            const {s,e} = getRange(f);
+            try { setFullReport(await api.getReports(s,e)); } catch {}
+          };
+
+          // All payments from report — recentPayments is already grouped by client
+          // Each group: { client_id, client_name, total_amount, payments: [{id, amount, payment_type, created_at}] }
+          const allGroups    = fullReport?.recentPayments || [];
+          const clientSearch = reportClientFilter.toLowerCase();
+
+          // Filter payments within each group by type
+          const typeFiltered = allGroups.map((g:any) => {
+            const pFiltered = (g.payments||[]).filter((p:any) =>
+              isLucro   ? ['INTEREST','PARTIAL','ADVANCE_INTEREST'].includes(p.payment_type) :
+              isCapital ? p.payment_type === 'CAPITAL' :
+              true
+            );
+            const total = pFiltered.reduce((s:number,p:any)=>s+(p.amount||0), 0);
+            return {...g, payments: pFiltered, total_filtered: total};
+          }).filter((g:any)=>g.payments.length>0);
+
+          const filtered = clientSearch
+            ? typeFiltered.filter((g:any)=>g.client_name?.toLowerCase().includes(clientSearch))
+            : typeFiltered;
+
+          const grandTotal = filtered.reduce((s:number,g:any)=>s+(g.total_filtered||0), 0);
+
+          // For a-receber: use interest_to_receive from dashData
+          const aReceberItems = (dashData?.details?.interestToReceive||[]);
+          const aReceberFiltered = clientSearch
+            ? aReceberItems.filter((ic:any)=>ic.client_name?.toLowerCase().includes(clientSearch))
+            : aReceberItems;
+
+          const titles: Record<string,string> = {
+            lucro: 'Lucro Recebido',
+            capital: 'Capital Recebido',
+            'a-receber': 'Lucro a Receber',
+          };
+          const accentCls: Record<string,string> = {
+            lucro: 'text-emerald-400',
+            capital: 'text-purple-400',
+            'a-receber': 'text-amber-400',
+          };
+          const bgCls: Record<string,string> = {
+            lucro: 'bg-emerald-500/10 border-emerald-500/20',
+            capital: 'bg-purple-500/10 border-purple-500/20',
+            'a-receber': 'bg-amber-500/10 border-amber-500/20',
+          };
+
+          const ptLabel = (t:string) =>
+            t==='INTEREST'?'Juros':t==='CAPITAL'?'Capital':t==='PARTIAL'?'Juros parcial':'Adiantado';
+
+          return (
+            <Modal title={`Relatório — ${titles[reportModal]}`} onClose={()=>{setReportModal(null);setReportClientFilter('');}}>
+              <div className="space-y-4">
+
+                {/* Filtros de período — só para lucro e capital */}
+                {!isAReceber && (
+                  <div className="flex gap-2">
+                    {filters.map(f=>(
+                      <button key={f.k} onClick={()=>{ setReportFilter(f.k); loadReport(f.k); }}
+                        className={`flex-1 py-2 rounded-xl text-xs font-black border transition-all ${reportFilter===f.k?'bg-blue-600 border-blue-500 text-white':'bg-white/[0.04] border-white/[0.06] text-white/40'}`}>
+                        {f.l}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Total do período */}
+                {!isAReceber && (
+                  <div className={`${bgCls[reportModal]} border rounded-2xl p-4`}>
+                    <p className="text-[9px] uppercase font-black tracking-widest mb-1 opacity-60">{titles[reportModal]} no período</p>
+                    <p className={`text-2xl font-black ${accentCls[reportModal]}`}>{fmtBRL(grandTotal)}</p>
+                    <p className="text-[10px] text-white/25 mt-1">{filtered.length} cliente{filtered.length!==1?'s':''}</p>
+                  </div>
+                )}
+
+                {/* Total a receber */}
+                {isAReceber && (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
+                    <p className="text-[9px] text-amber-400/60 uppercase font-black tracking-widest mb-1">Total a Receber</p>
+                    <p className="text-2xl font-black text-amber-400">{fmtBRL(dashData?.metrics?.total_interest_to_receive||0)}</p>
+                    <p className="text-[10px] text-white/25 mt-1">{aReceberItems.length} contrato{aReceberItems.length!==1?'s':''} em aberto</p>
+                  </div>
+                )}
+
+                {/* Busca por cliente */}
+                <div className="relative">
+                  <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
+                  <input type="text" placeholder="Filtrar por cliente..." value={reportClientFilter}
+                    onChange={e=>setReportClientFilter(e.target.value)}
+                    className={`${inp} pl-10 py-2.5`}/>
+                </div>
+
+                {/* LISTA — Lucro / Capital */}
+                {!isAReceber && (
+                  <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-0.5">
+                    {filtered.length === 0
+                      ? <p className="text-center text-white/30 text-sm py-6">Nenhum pagamento no período</p>
+                      : filtered.map((g:any)=>(
+                        <div key={g.client_id} className={`${card} overflow-hidden`}>
+                          <details>
+                            <summary className="flex justify-between items-center p-3 cursor-pointer list-none">
+                              <div>
+                                <p className="font-black text-white text-sm">{g.client_name}</p>
+                                <p className="text-[10px] text-white/25 mt-0.5">{g.payments.length} pagamento{g.payments.length!==1?'s':''}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-black text-sm ${accentCls[reportModal]}`}>{fmtBRL(g.total_filtered)}</span>
+                                <ChevronDown size={13} className="text-white/30"/>
+                              </div>
+                            </summary>
+                            <div className="border-t border-white/[0.05]">
+                              {g.payments.map((p:any)=>(
+                                <div key={p.id} className="flex justify-between items-center px-3 py-2 border-b border-white/[0.04] last:border-0">
+                                  <div>
+                                    <p className="text-xs text-white/60 font-bold">{ptLabel(p.payment_type)}</p>
+                                    <p className="text-[10px] text-white/25">{format(new Date(p.created_at),'dd/MM/yyyy · HH:mm')}</p>
+                                  </div>
+                                  <span className={`font-black text-sm ${accentCls[reportModal]}`}>{fmtBRL(p.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+
+                {/* LISTA — A Receber */}
+                {isAReceber && (
+                  <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-0.5">
+                    {aReceberFiltered.length === 0
+                      ? <p className="text-center text-white/30 text-sm py-6">Nenhum juros pendente</p>
+                      : aReceberFiltered.map((ic:any)=>(
+                        <div key={ic.id} className={`${card} p-3 flex justify-between items-center`}>
+                          <div>
+                            <p className="font-black text-white text-sm">{ic.client_name}</p>
+                            <p className="text-[10px] text-white/30 mt-0.5">
+                              Vence: {format(parseDate(ic.due_date),'dd/MM/yyyy')}
+                              {ic.due_date < format(today,'yyyy-MM-dd') && <span className="text-red-400 ml-1">· ATRASADO</span>}
+                            </p>
+                          </div>
+                          <p className="font-black text-amber-400 text-sm">{fmtBRL(ic.base_interest_amount - (ic.paid_amount||0))}</p>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+              </div>
+            </Modal>
+          );
+        })()}
 
         {/* ── ALTERAR VENCIMENTO ─────────────────────────────── */}
         {changeDueModal && (
