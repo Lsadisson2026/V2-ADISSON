@@ -80,11 +80,11 @@ const ReceiptModal = ({ receipt, onClose }: { receipt: any; onClose: () => void 
 };
 
 // ── LOAN CARD ─────────────────────────────────────────────────
-const LoanCard: React.FC<{
+const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, onRenegotiate, onEdit, onDelete, onWhatsApp }: {
   contract: Contract; client?: Client; cycle?: InterestCycle; user: AppUser | null;
   onPayInterest:()=>void; onPayCapital:()=>void; onRenegotiate:()=>void;
   onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void;
-}> = ({ contract, client, cycle, user, onPayInterest, onPayCapital, onRenegotiate, onEdit, onDelete, onWhatsApp }) => {
+}) => {
   const today     = format(new Date(),'yyyy-MM-dd');
   const isOverdue = contract.next_due_date < today;
   const isToday   = contract.next_due_date === today;
@@ -185,8 +185,8 @@ const LoanCard: React.FC<{
 
         {/* Action bar */}
         <div className="flex items-center gap-1.5 pt-1">
-          <button onClick={onPayCapital}  className="flex-1 bg-white/[0.06] border border-white/[0.08] text-white font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><CreditCard size={12}/> Capital / Parc.</button>
-          <button onClick={onPayInterest} className="flex-1 bg-blue-600/20 border border-blue-500/30 text-blue-300 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><DollarSign size={12}/> Juros / Parc.</button>
+          <button onClick={onPayCapital}  className="flex-1 bg-white/[0.06] border border-white/[0.08] text-white font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><CreditCard size={12}/> Pagar</button>
+          <button onClick={onPayInterest} className="flex-1 bg-blue-600/20 border border-blue-500/30 text-blue-300 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><DollarSign size={12}/> Pagar Juros</button>
           <button onClick={onRenegotiate} className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400"><RotateCcw size={14}/></button>
           {user?.role==='ADMIN' && <button onClick={onDelete} className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-400"><Trash2 size={14}/></button>}
         </div>
@@ -197,49 +197,161 @@ const LoanCard: React.FC<{
 
 // ── PAYMENT FORM ──────────────────────────────────────────────
 const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; cycle?: InterestCycle|null; mode:'interest'|'capital'; onSubmit:(d:any)=>void; }) => {
-  const defaultAmt = mode==='interest' ? (cycle?.base_interest_amount ?? contract.monthly_interest_amount) : contract.capital;
-  const [amount, setAmount]   = useState(defaultAmt);
-  const [isParcel, setIsParcel] = useState(false);
-  const [nextDate, setNextDate] = useState(format(addMonths(parseDate(contract.next_due_date),1),'yyyy-MM-dd'));
-  const [loading, setLoading] = useState(false);
-  
-  // Se for parcelado/parcial, o tipo é PARTIAL (para juros) ou CAPITAL (para capital, mas valor menor)
-  // O backend trata CAPITAL com valor menor como amortização.
-  // O backend trata PARTIAL como pagamento parcial de juros.
-  const isPartial = amount < (defaultAmt - 0.01);
-  const pType = mode==='capital' ? 'CAPITAL' : (isParcel || isPartial) ? 'PARTIAL' : 'INTEREST';
+  const jurosAbertos = cycle?.base_interest_amount ?? contract.monthly_interest_amount;
+  const jurosDevidos = Math.max(0, jurosAbertos - (cycle?.paid_amount ?? 0));
 
-  // Reset amount when toggling parcel mode
+  // Modo capital: capital+juros ou só capital
+  type CapMode = 'full' | 'capital-only' | null;
+  const [capMode, setCapMode] = useState<CapMode>(mode === 'capital' ? null : 'full');
+
+  const defaultAmount = capMode === 'full'
+    ? contract.capital + jurosDevidos
+    : capMode === 'capital-only'
+    ? contract.capital
+    : mode === 'interest' ? jurosDevidos : 0;
+
+  const [amount, setAmount]     = useState(defaultAmount);
+  const [nextDate, setNextDate] = useState(format(addMonths(parseDate(contract.next_due_date),1),'yyyy-MM-dd'));
+  const [loading, setLoading]   = useState(false);
+
   useEffect(() => {
-    if (!isParcel) setAmount(defaultAmt);
-  }, [isParcel, defaultAmt]);
+    if (capMode === 'full')         setAmount(contract.capital + jurosDevidos);
+    else if (capMode === 'capital-only') setAmount(contract.capital);
+  }, [capMode]);
+
+  // Preview amortização
+  const pagoEmJuros   = capMode === 'full' ? Math.min(amount, jurosDevidos) : 0;
+  const pagoEmCapital = capMode === 'full'
+    ? Math.max(0, amount - jurosDevidos)
+    : amount;
+  const newCapital    = Math.max(0, contract.capital - pagoEmCapital);
+  const newJuros      = newCapital * contract.interest_rate_monthly;
+  const newTotal      = newCapital + newJuros;
+  const isFullQuitacao = newCapital <= 0.01;
+  const isPartial      = mode === 'interest' && amount < jurosDevidos - 0.01;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (amount <= 0) { alert('Informe um valor maior que zero.'); return; }
+    setLoading(true);
+    try {
+      if (mode === 'interest') {
+        await onSubmit({ contract_id: contract.id, cycle_id: cycle?.id ?? null, amount, payment_type: isPartial ? 'PARTIAL' : 'INTEREST', payment_method: 'PIX', next_due_date: nextDate });
+      } else if (capMode === 'full') {
+        // Split automático: juros primeiro, resto no capital
+        await onSubmit({
+          contract_id: contract.id, cycle_id: cycle?.id ?? null,
+          amount: pagoEmJuros > 0.01 ? pagoEmJuros : amount,
+          payment_type: pagoEmJuros > 0.01 ? (pagoEmJuros >= jurosDevidos - 0.01 ? 'INTEREST' : 'PARTIAL') : 'CAPITAL',
+          payment_method: 'PIX', next_due_date: null,
+          _split_capital: pagoEmJuros > 0.01 && pagoEmCapital > 0.01 ? pagoEmCapital : null,
+        });
+      } else {
+        // Só capital — ciclo de juros permanece aberto
+        await onSubmit({ contract_id: contract.id, cycle_id: null, amount, payment_type: 'CAPITAL', payment_method: 'PIX', next_due_date: null });
+      }
+    } finally { setLoading(false); }
+  };
 
   return (
-    <form onSubmit={async e=>{ e.preventDefault(); setLoading(true); await onSubmit({contract_id:contract.id,cycle_id:cycle?.id??null,amount,payment_type:pType,payment_method:'CASH',next_due_date:mode==='capital'?null:nextDate}); setLoading(false); }} className="space-y-4">
-      <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-center">
-        <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">{mode==='interest'?'Juros a Receber':'Saldo do Capital'}</p>
-        <p className="text-2xl font-black text-white">{fmtBRL(defaultAmt)}</p>
-        <p className="text-xs text-white/30 mt-0.5">{contract.client_name}</p>
+    <form onSubmit={handleSubmit} className="space-y-4">
+
+      {/* Info contrato */}
+      <div className="bg-white/[0.04] border border-white/[0.07] rounded-2xl p-4">
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="font-black text-white">{contract.client_name}</p>
+            <p className="text-xs text-white/30 mt-0.5">Taxa: {(contract.interest_rate_monthly * 100).toFixed(1)}% ao mês</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[9px] text-white/30 uppercase">Capital</p>
+            <p className="font-black text-white">{fmtBRL(contract.capital)}</p>
+          </div>
+        </div>
+        {jurosDevidos > 0 && (
+          <div className="mt-3 pt-3 border-t border-white/[0.06] flex justify-between text-xs">
+            <span className="text-white/30">Juros pendentes: <span className="text-blue-300 font-black">{fmtBRL(jurosDevidos)}</span></span>
+            <span className="text-white/30">Total: <span className="text-white font-black">{fmtBRL(contract.capital + jurosDevidos)}</span></span>
+          </div>
+        )}
       </div>
 
-      {/* Toggle Parcelar */}
-      <div className="flex bg-white/[0.04] p-1 rounded-xl">
-        <button type="button" onClick={()=>setIsParcel(false)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${!isParcel?'bg-blue-600 text-white shadow-lg':'text-white/40 hover:text-white'}`}>Valor Total</button>
-        <button type="button" onClick={()=>setIsParcel(true)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${isParcel?'bg-blue-600 text-white shadow-lg':'text-white/40 hover:text-white'}`}>Parcelar / Outro</button>
-      </div>
+      {/* Seleção — só no modo capital */}
+      {mode === 'capital' && (
+        <div className="space-y-2">
+          <p className={lbl}>Como vai amortizar?</p>
 
-      <div>
-        <label className={lbl}>Valor a Receber (R$)</label>
-        <input type="number" step="0.01" value={amount} onChange={e=>setAmount(+e.target.value||0)} className={inp} required readOnly={!isParcel} />
-        {isParcel && mode==='interest' && <p className="text-[10px] text-white/40 mt-1">Restante: {fmtBRL(Math.max(0, defaultAmt - amount))}</p>}
-        {isParcel && mode==='capital' && <p className="text-[10px] text-white/40 mt-1">Novo Saldo Devedor: {fmtBRL(Math.max(0, defaultAmt - amount))}</p>}
-      </div>
+          {/* Opção A: Capital + Juros */}
+          <button type="button" onClick={() => setCapMode('full')}
+            className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${capMode==='full' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/[0.03] border-white/[0.06]'}`}>
+            <CheckCircle2 size={17} className={`flex-shrink-0 ${capMode==='full' ? 'text-emerald-400' : 'text-white/20'}`} />
+            <div className="text-left flex-1">
+              <p className={`font-black text-sm ${capMode==='full' ? 'text-emerald-300' : 'text-white/50'}`}>Capital + Juros</p>
+              <p className="text-[10px] text-white/25 mt-0.5">Quita os juros pendentes e amortiza o capital</p>
+            </div>
+            <span className={`font-black text-sm flex-shrink-0 ${capMode==='full' ? 'text-emerald-300' : 'text-white/30'}`}>
+              {fmtBRL(contract.capital + jurosDevidos)}
+            </span>
+          </button>
 
-      {mode==='interest' && <div><label className={lbl}>Próximo Vencimento</label><input type="date" value={nextDate} onChange={e=>setNextDate(e.target.value)} className={inp} required /></div>}
-      
-      <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-        {loading?<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>REGISTRANDO...</>:'✓ CONFIRMAR RECEBIMENTO'}
-      </button>
+          {/* Opção B: Só Capital */}
+          <button type="button" onClick={() => setCapMode('capital-only')}
+            className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${capMode==='capital-only' ? 'bg-blue-500/10 border-blue-500/40' : 'bg-white/[0.03] border-white/[0.06]'}`}>
+            <CreditCard size={17} className={`flex-shrink-0 ${capMode==='capital-only' ? 'text-blue-400' : 'text-white/20'}`} />
+            <div className="text-left flex-1">
+              <p className={`font-black text-sm ${capMode==='capital-only' ? 'text-blue-300' : 'text-white/50'}`}>Só Capital</p>
+              <p className="text-[10px] text-white/25 mt-0.5">Juros desta parcela continuam em aberto</p>
+            </div>
+            <span className={`font-black text-sm flex-shrink-0 ${capMode==='capital-only' ? 'text-blue-300' : 'text-white/30'}`}>
+              {fmtBRL(contract.capital)}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Campo de valor — aparece após escolha */}
+      {capMode !== null && (
+        <>
+          <div>
+            <label className={lbl}>Valor Recebido (R$)</label>
+            <input type="number" step="0.01" min="0.01" value={amount}
+              onChange={e => setAmount(Math.max(0, +e.target.value || 0))}
+              className={inp} required />
+            {isFullQuitacao && <p className="text-[10px] text-emerald-400 mt-1.5 font-bold">✓ Quitação total do contrato</p>}
+            {isPartial      && <p className="text-[10px] text-amber-400 mt-1.5 font-bold">⚠ Pagamento parcial de juros</p>}
+          </div>
+
+          {/* Preview amortização parcial */}
+          {mode === 'capital' && !isFullQuitacao && newCapital > 0 && amount > 0 && (
+            <div className="bg-white/[0.03] border border-white/[0.07] rounded-xl p-3 space-y-2">
+              <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">Após este pagamento</p>
+              {capMode === 'full' && pagoEmJuros > 0.01 && (
+                <div className="flex justify-between text-xs"><span className="text-white/40">→ Quita juros:</span><span className="font-black text-blue-300">{fmtBRL(pagoEmJuros)}</span></div>
+              )}
+              {pagoEmCapital > 0.01 && (
+                <div className="flex justify-between text-xs"><span className="text-white/40">→ Amortiza capital:</span><span className="font-black text-white">{fmtBRL(pagoEmCapital)}</span></div>
+              )}
+              <div className="border-t border-white/[0.07] pt-2 space-y-1.5">
+                <div className="flex justify-between text-xs"><span className="text-white/40">Novo capital:</span><span className="font-black text-white">{fmtBRL(newCapital)}</span></div>
+                <div className="flex justify-between text-xs"><span className="text-white/40">Próximos juros:</span><span className="font-black text-blue-300">{fmtBRL(newJuros)}</span></div>
+                <div className="flex justify-between text-xs border-t border-white/[0.07] pt-1.5"><span className="text-white/40">Novo saldo devedor:</span><span className="font-black text-amber-300">{fmtBRL(newTotal)}</span></div>
+              </div>
+            </div>
+          )}
+
+          {/* Próximo vencimento só para juros */}
+          {mode === 'interest' && (
+            <div><label className={lbl}>Próximo Vencimento</label>
+              <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className={inp} required />
+            </div>
+          )}
+
+          <button type="submit" disabled={loading}
+            className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+            {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>REGISTRANDO...</> : '✓ CONFIRMAR RECEBIMENTO'}
+          </button>
+        </>
+      )}
     </form>
   );
 };
@@ -336,46 +448,78 @@ const ReportsView = () => {
 
 // ── CALCULADORA ───────────────────────────────────────────────
 const CalculatorView = () => {
-  const [capital,setCapital] = useState(1000);
-  const [rate,setRate]       = useState(10);
-  const monthlyInterest = capital * (rate / 100);
-  const paybackMonths = rate > 0 ? Math.ceil(100 / rate) : 0;
+  const [capital, setCapital] = useState(1000);
+  const [rate, setRate]       = useState(10);
+  const monthly   = capital * (rate / 100);
+  const annual    = monthly * 12;
+  // Payback: meses para recuperar o capital só com juros
+  const payback   = monthly > 0 ? Math.ceil(capital / monthly) : 0;
+  const progress  = Math.min(100, payback > 0 ? Math.round((1 / payback) * 100) : 0);
 
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-black text-white">Calculadora</h1>
-      <div className={`${card} p-5 space-y-4`}>
-        <div><label className={lbl}>Capital (R$)</label><input type="number" value={capital} onChange={e=>setCapital(+e.target.value||0)} className={inp}/></div>
-        <div><label className={lbl}>Juros (%)</label><input type="number" value={rate} onChange={e=>setRate(+e.target.value||0)} className={inp}/></div>
-        
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-5 text-center">
-          <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-2">Juros Mensal</p>
-          <p className="text-3xl font-black text-white">{fmtBRL(monthlyInterest)}</p>
-          <p className="text-xs text-white/30 mt-2">Anual: {fmtBRL(monthlyInterest * 12)}</p>
-        </div>
 
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-400">
-              <Clock size={18} />
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Previsão de Retorno</p>
-              <p className="text-sm font-black text-white">Ponto de Equilíbrio</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-white/40">Tempo para recuperar o capital:</span>
-              <span className="text-sm font-black text-emerald-400">{paybackMonths} meses</span>
-            </div>
-            <div className="w-full bg-white/[0.05] h-1.5 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full" style={{ width: '100%' }} />
-            </div>
-            <p className="text-[10px] text-white/20 leading-tight">
-              Em {paybackMonths} meses, você terá recebido {fmtBRL(monthlyInterest * paybackMonths)} em juros, cobrindo o capital inicial de {fmtBRL(capital)}.
+      {/* Inputs */}
+      <div className={`${card} p-5 space-y-4`}>
+        <div><label className={lbl}>Capital Emprestado (R$)</label>
+          <input type="number" value={capital} onChange={e=>setCapital(+e.target.value||0)} className={inp}/>
+        </div>
+        <div><label className={lbl}>Juros Mensal (%)</label>
+          <input type="number" step="0.1" value={rate} onChange={e=>setRate(+e.target.value||0)} className={inp}/>
+        </div>
+      </div>
+
+      {/* Resultado principal */}
+      <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-5 text-center">
+        <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-2">Juros Mensal</p>
+        <p className="text-3xl font-black text-white">{fmtBRL(monthly)}</p>
+        <p className="text-xs text-white/30 mt-1">Anual: {fmtBRL(annual)}</p>
+      </div>
+
+      {/* Payback — retorno do capital */}
+      <div className={`${card} p-5`}>
+        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-4">Calculadora de Retorno (Payback)</p>
+
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs text-white/40">Ponto de Equilíbrio</p>
+            <p className="text-2xl font-black text-emerald-400">{payback > 0 ? `${payback} meses` : '—'}</p>
+            <p className="text-[10px] text-white/25 mt-0.5">
+              {payback > 0 ? `Em ${payback} meses você recupera ${fmtBRL(capital)} só com juros` : 'Informe capital e taxa'}
             </p>
           </div>
+          <div className="w-16 h-16 relative flex items-center justify-center">
+            <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#ffffff10" strokeWidth="3"/>
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3"
+                strokeDasharray={`${progress} ${100 - progress}`} strokeLinecap="round"/>
+            </svg>
+            <span className="absolute text-[10px] font-black text-emerald-400">{progress}%</span>
+          </div>
+        </div>
+
+        {/* Barra de progresso */}
+        <div className="w-full bg-white/[0.06] rounded-full h-2 mb-3">
+          <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-2 rounded-full transition-all duration-500" style={{width:`${progress}%`}}/>
+        </div>
+
+        {/* Tabela meses */}
+        <div className="space-y-1.5 mt-4">
+          {[3,6,12].map(m => {
+            const acumulado = monthly * m;
+            const pct       = capital > 0 ? Math.min(100, Math.round((acumulado / capital) * 100)) : 0;
+            return (
+              <div key={m} className="flex items-center justify-between text-xs">
+                <span className="text-white/30 w-16">{m} meses</span>
+                <div className="flex-1 mx-3 bg-white/[0.05] rounded-full h-1.5">
+                  <div className="bg-blue-500/60 h-1.5 rounded-full" style={{width:`${pct}%`}}/>
+                </div>
+                <span className="text-white/50 font-black w-20 text-right">{fmtBRL(acumulado)}</span>
+                <span className="text-white/25 w-10 text-right">{pct}%</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -521,20 +665,46 @@ export default function App() {
     scheduled: enriched.filter(e=>e.contract.next_due_date>today).length,
   };
 
-  const handlePayment = async (data:any) => {
-    const ct = contracts.find(c=>c.id===data.contract_id);
+  const handlePayment = async (data: any) => {
+    const ct = contracts.find(c => c.id === data.contract_id);
     try {
-      await api.registerPayment(data);
+      const splitCapital = data._split_capital ?? null;
+      const { _split_capital, ...payData } = data;
+
+      // Registra pagamento de juros primeiro
+      await api.registerPayment(payData);
+
+      // Se tem split, registra capital em seguida
+      if (splitCapital && splitCapital > 0) {
+        await api.registerPayment({
+          contract_id:    data.contract_id,
+          cycle_id:       null,
+          amount:         splitCapital,
+          payment_type:   'CAPITAL',
+          payment_method: 'PIX',
+          next_due_date:  null,
+        });
+      }
+
+      const totalPago   = data.amount + (splitCapital ?? 0);
+      const juros       = data.amount;
+      const capitalPago = splitCapital ?? 0;
+      const novoCapital = Math.max(0, (ct?.capital ?? 0) - capitalPago);
+
       setReceipt({
-        client_name:  ct?.client_name||'',
-        client_phone: ct?.client_phone||'',
-        amount:       data.amount,
-        type_label:   data.payment_type==='CAPITAL'?'Amortização de Capital':data.payment_type==='PARTIAL'?'Juros Parcial':'Juros',
-        remaining:    data.payment_type==='CAPITAL' ? Math.max(0,(ct?.capital||0)-data.amount) : ct?.capital||0,
+        client_name:  ct?.client_name  || '',
+        client_phone: ct?.client_phone || '',
+        amount:       totalPago,
+        type_label:   splitCapital
+          ? `Juros (${fmtBRL(juros)}) + Capital (${fmtBRL(capitalPago)})`
+          : data.payment_type === 'CAPITAL' ? 'Amortização de Capital'
+          : data.payment_type === 'PARTIAL' ? 'Juros Parcial' : 'Juros',
+        remaining: novoCapital,
       });
+
       setPayModal(null);
       await loadAll();
-    } catch(e:any){ alert(e.message); }
+    } catch (e: any) { alert(e.message); }
   };
 
   const sendWA = (contract:Contract, client?:Client) => {
@@ -595,7 +765,12 @@ export default function App() {
             <div><h1 className="text-xl font-black text-white">Olá, {user.name.split(' ')[0]} 👋</h1><p className="text-white/30 text-sm">Resumo do portfólio</p></div>
             {user.role==='ADMIN'&&<button onClick={()=>setNewContractModal(true)} className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 text-sm shadow-xl shadow-blue-900/20"><PlusCircle size={17}/> Novo Empréstimo</button>}
             <div className="grid grid-cols-2 gap-3">
-              {[{l:'Capital na Rua',v:fmtBRL(dashData?.metrics?.total_on_street||0),c:'text-blue-400',bg:'bg-blue-500/10'},{l:'Juros Recebidos',v:fmtBRL(dashData?.metrics?.total_interest_received||0),c:'text-emerald-400',bg:'bg-emerald-500/10'},{l:'Juros a Receber',v:fmtBRL(dashData?.metrics?.total_interest_to_receive||0),c:'text-amber-400',bg:'bg-amber-500/10'},{l:'Ativos',v:dashData?.metrics?.total_active_contracts||0,c:'text-white',bg:'bg-white/[0.05]'}].map(m=>(
+              {[
+                {l:'Capital na Rua',    v:fmtBRL(dashData?.metrics?.total_on_street||0),           c:'text-blue-400',    bg:'bg-blue-500/10'   },
+                {l:'Lucro Recebido',    v:fmtBRL(dashData?.metrics?.total_interest_received||0),    c:'text-emerald-400', bg:'bg-emerald-500/10'},
+                {l:'Capital Recebido',  v:fmtBRL(dashData?.metrics?.total_capital_received||0),     c:'text-purple-400',  bg:'bg-purple-500/10' },
+                {l:'Lucro a Receber',   v:fmtBRL(dashData?.metrics?.total_interest_to_receive||0),  c:'text-amber-400',   bg:'bg-amber-500/10'  },
+              ].map(m=>(
                 <div key={m.l} className={`${m.bg} border border-white/[0.07] rounded-2xl p-4 cursor-pointer`} onClick={()=>setActiveTab('loans')}>
                   <p className="text-[9px] text-white/30 uppercase tracking-wider mb-1">{m.l}</p><p className={`text-lg font-black ${m.c}`}>{m.v}</p>
                 </div>
