@@ -80,10 +80,10 @@ const ReceiptModal = ({ receipt, onClose }: { receipt: any; onClose: () => void 
 };
 
 // ── LOAN CARD ─────────────────────────────────────────────────
-const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, onRenegotiate, onEdit, onDelete, onWhatsApp }: {
+const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, onRenegotiate, onEdit, onDelete, onWhatsApp, onChangeDue }: {
   contract: Contract; client?: Client; cycle?: InterestCycle; user: AppUser | null;
   onPayInterest:()=>void; onPayCapital:()=>void; onRenegotiate:()=>void;
-  onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void;
+  onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void; onChangeDue:()=>void;
 }) => {
   const today     = format(new Date(),'yyyy-MM-dd');
   const isOverdue = contract.next_due_date < today;
@@ -187,6 +187,7 @@ const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, 
         <div className="flex items-center gap-1.5 pt-1">
           <button onClick={onPayCapital}  className="flex-1 bg-white/[0.06] border border-white/[0.08] text-white font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><CreditCard size={12}/> Pagar</button>
           <button onClick={onPayInterest} className="flex-1 bg-blue-600/20 border border-blue-500/30 text-blue-300 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><DollarSign size={12}/> Pagar Juros</button>
+          {user?.role==='ADMIN' && <button onClick={onChangeDue} title="Alterar vencimento" className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-white/[0.05] border border-white/[0.06] text-white/40 hover:text-blue-300 hover:border-blue-500/30 transition-all"><Clock size={14}/></button>}
           <button onClick={onRenegotiate} className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400"><RotateCcw size={14}/></button>
           {user?.role==='ADMIN' && <button onClick={onDelete} className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-400"><Trash2 size={14}/></button>}
         </div>
@@ -200,35 +201,35 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
   const jurosAbertos = cycle?.base_interest_amount ?? contract.monthly_interest_amount;
   const jurosDevidos = Math.max(0, jurosAbertos - (cycle?.paid_amount ?? 0));
 
-  // Modo capital: capital+juros ou só capital
   type CapMode = 'full' | 'capital-only' | null;
   const [capMode, setCapMode] = useState<CapMode>(mode === 'capital' ? null : 'full');
+
+  // Próximo vencimento: +1 mês a partir da data de vencimento atual do contrato
+  const autoNextDate = format(addMonths(parseDate(contract.next_due_date), 1), 'yyyy-MM-dd');
+  const [nextDate, setNextDate] = useState(autoNextDate);
+  const [loading, setLoading]   = useState(false);
 
   const defaultAmount = capMode === 'full'
     ? contract.capital + jurosDevidos
     : capMode === 'capital-only'
     ? contract.capital
     : mode === 'interest' ? jurosDevidos : 0;
-
-  const [amount, setAmount]     = useState(defaultAmount);
-  const [nextDate, setNextDate] = useState(format(addMonths(parseDate(contract.next_due_date),1),'yyyy-MM-dd'));
-  const [loading, setLoading]   = useState(false);
+  const [amount, setAmount] = useState(defaultAmount);
 
   useEffect(() => {
-    if (capMode === 'full')         setAmount(contract.capital + jurosDevidos);
+    if (capMode === 'full')              setAmount(contract.capital + jurosDevidos);
     else if (capMode === 'capital-only') setAmount(contract.capital);
   }, [capMode]);
 
-  // Preview amortização
   const pagoEmJuros   = capMode === 'full' ? Math.min(amount, jurosDevidos) : 0;
-  const pagoEmCapital = capMode === 'full'
-    ? Math.max(0, amount - jurosDevidos)
-    : amount;
+  const pagoEmCapital = capMode === 'full' ? Math.max(0, amount - jurosDevidos) : amount;
   const newCapital    = Math.max(0, contract.capital - pagoEmCapital);
   const newJuros      = newCapital * contract.interest_rate_monthly;
   const newTotal      = newCapital + newJuros;
   const isFullQuitacao = newCapital <= 0.01;
   const isPartial      = mode === 'interest' && amount < jurosDevidos - 0.01;
+  // Mostra campo de data em todos os modos exceto quitação total e juros parcial
+  const showDateField  = !isFullQuitacao && !isPartial;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -236,19 +237,22 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
     setLoading(true);
     try {
       if (mode === 'interest') {
-        await onSubmit({ contract_id: contract.id, cycle_id: cycle?.id ?? null, amount, payment_type: isPartial ? 'PARTIAL' : 'INTEREST', payment_method: 'PIX', next_due_date: nextDate });
+        await onSubmit({ contract_id: contract.id, cycle_id: cycle?.id ?? null, amount,
+          payment_type: isPartial ? 'PARTIAL' : 'INTEREST', payment_method: 'PIX',
+          next_due_date: isPartial ? null : nextDate });
       } else if (capMode === 'full') {
-        // Split automático: juros primeiro, resto no capital
         await onSubmit({
           contract_id: contract.id, cycle_id: cycle?.id ?? null,
           amount: pagoEmJuros > 0.01 ? pagoEmJuros : amount,
           payment_type: pagoEmJuros > 0.01 ? (pagoEmJuros >= jurosDevidos - 0.01 ? 'INTEREST' : 'PARTIAL') : 'CAPITAL',
-          payment_method: 'PIX', next_due_date: null,
+          payment_method: 'PIX',
+          next_due_date: isFullQuitacao ? null : nextDate,
           _split_capital: pagoEmJuros > 0.01 && pagoEmCapital > 0.01 ? pagoEmCapital : null,
         });
       } else {
-        // Só capital — ciclo de juros permanece aberto
-        await onSubmit({ contract_id: contract.id, cycle_id: null, amount, payment_type: 'CAPITAL', payment_method: 'PIX', next_due_date: null });
+        await onSubmit({ contract_id: contract.id, cycle_id: null, amount,
+          payment_type: 'CAPITAL', payment_method: 'PIX',
+          next_due_date: isFullQuitacao ? null : nextDate });
       }
     } finally { setLoading(false); }
   };
@@ -276,12 +280,10 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
         )}
       </div>
 
-      {/* Seleção — só no modo capital */}
+      {/* Seleção modo capital */}
       {mode === 'capital' && (
         <div className="space-y-2">
           <p className={lbl}>Como vai amortizar?</p>
-
-          {/* Opção A: Capital + Juros */}
           <button type="button" onClick={() => setCapMode('full')}
             className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${capMode==='full' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/[0.03] border-white/[0.06]'}`}>
             <CheckCircle2 size={17} className={`flex-shrink-0 ${capMode==='full' ? 'text-emerald-400' : 'text-white/20'}`} />
@@ -289,12 +291,8 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
               <p className={`font-black text-sm ${capMode==='full' ? 'text-emerald-300' : 'text-white/50'}`}>Capital + Juros</p>
               <p className="text-[10px] text-white/25 mt-0.5">Quita os juros pendentes e amortiza o capital</p>
             </div>
-            <span className={`font-black text-sm flex-shrink-0 ${capMode==='full' ? 'text-emerald-300' : 'text-white/30'}`}>
-              {fmtBRL(contract.capital + jurosDevidos)}
-            </span>
+            <span className={`font-black text-sm flex-shrink-0 ${capMode==='full' ? 'text-emerald-300' : 'text-white/30'}`}>{fmtBRL(contract.capital + jurosDevidos)}</span>
           </button>
-
-          {/* Opção B: Só Capital */}
           <button type="button" onClick={() => setCapMode('capital-only')}
             className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${capMode==='capital-only' ? 'bg-blue-500/10 border-blue-500/40' : 'bg-white/[0.03] border-white/[0.06]'}`}>
             <CreditCard size={17} className={`flex-shrink-0 ${capMode==='capital-only' ? 'text-blue-400' : 'text-white/20'}`} />
@@ -302,23 +300,22 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
               <p className={`font-black text-sm ${capMode==='capital-only' ? 'text-blue-300' : 'text-white/50'}`}>Só Capital</p>
               <p className="text-[10px] text-white/25 mt-0.5">Juros desta parcela continuam em aberto</p>
             </div>
-            <span className={`font-black text-sm flex-shrink-0 ${capMode==='capital-only' ? 'text-blue-300' : 'text-white/30'}`}>
-              {fmtBRL(contract.capital)}
-            </span>
+            <span className={`font-black text-sm flex-shrink-0 ${capMode==='capital-only' ? 'text-blue-300' : 'text-white/30'}`}>{fmtBRL(contract.capital)}</span>
           </button>
         </div>
       )}
 
-      {/* Campo de valor — aparece após escolha */}
+      {/* Campos — aparecem após escolha do modo */}
       {capMode !== null && (
         <>
+          {/* Valor */}
           <div>
             <label className={lbl}>Valor Recebido (R$)</label>
             <input type="number" step="0.01" min="0.01" value={amount}
               onChange={e => setAmount(Math.max(0, +e.target.value || 0))}
               className={inp} required />
             {isFullQuitacao && <p className="text-[10px] text-emerald-400 mt-1.5 font-bold">✓ Quitação total do contrato</p>}
-            {isPartial      && <p className="text-[10px] text-amber-400 mt-1.5 font-bold">⚠ Pagamento parcial de juros</p>}
+            {isPartial      && <p className="text-[10px] text-amber-400 mt-1.5 font-bold">⚠ Pagamento parcial — próximo vencimento mantido</p>}
           </div>
 
           {/* Preview amortização parcial */}
@@ -339,10 +336,14 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
             </div>
           )}
 
-          {/* Próximo vencimento só para juros */}
-          {mode === 'interest' && (
-            <div><label className={lbl}>Próximo Vencimento</label>
-              <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className={inp} required />
+          {/* ✅ PRÓXIMO VENCIMENTO — editável em TODOS os modos */}
+          {showDateField && (
+            <div>
+              <label className={lbl}>Próximo Vencimento</label>
+              <input type="date" value={nextDate}
+                onChange={e => setNextDate(e.target.value)}
+                className={inp} required />
+              <p className="text-[10px] text-white/25 mt-1">Calculado automaticamente · pode alterar se necessário</p>
             </div>
           )}
 
@@ -621,6 +622,7 @@ export default function App() {
   const [payModal,setPayModal]         = useState<{contract:Contract;cycle?:InterestCycle|null;mode:'interest'|'capital'}|null>(null);
   const [receipt,setReceipt]           = useState<any>(null);
   const [renegoModal,setRenegoModal]   = useState<{client:Client;contracts:Contract[];cycles?:InterestCycle[]}|null>(null);
+  const [changeDueModal,setChangeDueModal] = useState<Contract|null>(null);
   const [newContractModal,setNewContractModal] = useState(false);
   const [newClientModal,setNewClientModal]     = useState(false);
   const [editClientModal,setEditClientModal]   = useState<Client|null>(null);
@@ -669,12 +671,13 @@ export default function App() {
     const ct = contracts.find(c => c.id === data.contract_id);
     try {
       const splitCapital = data._split_capital ?? null;
+      const nextDue      = data.next_due_date ?? null;
       const { _split_capital, ...payData } = data;
 
-      // Registra pagamento de juros primeiro
+      // Registra pagamento de juros/parcial primeiro
       await api.registerPayment(payData);
 
-      // Se tem split, registra capital em seguida
+      // Se tem split (capital+juros), registra capital passando a data
       if (splitCapital && splitCapital > 0) {
         await api.registerPayment({
           contract_id:    data.contract_id,
@@ -682,7 +685,7 @@ export default function App() {
           amount:         splitCapital,
           payment_type:   'CAPITAL',
           payment_method: 'PIX',
-          next_due_date:  null,
+          next_due_date:  nextDue, // ✅ propaga a data escolhida
         });
       }
 
@@ -819,6 +822,7 @@ export default function App() {
                     onEdit={()=>{ const cl=clients.find(c=>c.id===contract.client_id); if(cl) setEditClientModal(cl); }}
                     onDelete={()=>setDeleteModal(contract.client_id)}
                     onWhatsApp={()=>sendWA(contract,client)}
+                    onChangeDue={()=>setChangeDueModal(contract)}
                   />
                 ))}</AnimatePresence>
             }
@@ -881,6 +885,40 @@ export default function App() {
             <button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-xl text-sm">SALVAR</button>
           </form>
         </Modal>}
+
+        {/* ── ALTERAR VENCIMENTO ─────────────────────────────── */}
+        {changeDueModal && (
+          <Modal title="Alterar Vencimento" onClose={() => setChangeDueModal(null)}>
+            <form onSubmit={async e => {
+              e.preventDefault();
+              const fd = new FormData(e.target as HTMLFormElement);
+              const newDate = fd.get('new_date') as string;
+              try {
+                await api.updateDueDate(changeDueModal.id, newDate);
+                setChangeDueModal(null);
+                loadAll();
+              } catch(err: any) { alert(err.message); }
+            }} className="space-y-4">
+              <div className="bg-white/[0.04] border border-white/[0.07] rounded-xl p-4">
+                <p className="font-black text-white">{changeDueModal.client_name}</p>
+                <p className="text-xs text-white/30 mt-1">
+                  Vencimento atual: <span className="text-amber-400 font-black">{format(parseDate(changeDueModal.next_due_date), 'dd/MM/yyyy')}</span>
+                </p>
+              </div>
+              <div>
+                <label className={lbl}>Nova Data de Vencimento</label>
+                <input name="new_date" type="date" defaultValue={changeDueModal.next_due_date} className={inp} required />
+              </div>
+              <p className="text-xs text-white/30 bg-blue-500/5 border border-blue-500/15 rounded-xl p-3">
+                Altera o vencimento do contrato e do ciclo de juros atual em aberto.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setChangeDueModal(null)} className="bg-white/[0.06] text-white font-black py-3 rounded-xl text-sm border border-white/[0.08]">Cancelar</button>
+                <button type="submit" className="bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-3 rounded-xl text-sm">Salvar</button>
+              </div>
+            </form>
+          </Modal>
+        )}
 
         {deleteModal&&<Modal title="Confirmar Exclusão" onClose={()=>setDeleteModal(null)}>
           <div className="space-y-4">

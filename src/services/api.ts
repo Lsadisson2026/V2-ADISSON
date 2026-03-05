@@ -428,3 +428,10 @@ export async function getReports(startDate?: string, endDate?: string): Promise<
     },
   };
 }
+export async function updateDueDate(contractId: number, newDate: string): Promise<void> {
+  const { error } = await supabase.rpc('update_due_date', {
+    p_contract_id: contractId,
+    p_new_date:    newDate,
+  });
+  if (error) throw new Error(error.message);
+}
