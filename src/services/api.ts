@@ -221,6 +221,11 @@ export async function updateClient(id: number, data: {
   if (error) throw new Error(error.message);
 }
 
+export async function deleteContract(contractId: number): Promise<void> {
+  const { error } = await supabase.rpc('delete_contract', { p_contract_id: contractId });
+  if (error) throw new Error(error.message);
+}
+
 export async function deleteClient(id: number): Promise<void> {
   const { error } = await supabase.rpc('delete_client', { p_client_id: id });
   if (error) throw new Error(error.message);

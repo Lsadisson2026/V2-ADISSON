@@ -209,16 +209,12 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
   const [nextDate, setNextDate] = useState(autoNextDate);
   const [loading, setLoading]   = useState(false);
 
-  const defaultAmount = capMode === 'full'
-    ? contract.capital + jurosDevidos
-    : capMode === 'capital-only'
-    ? contract.capital
-    : mode === 'interest' ? jurosDevidos : 0;
-  const [amount, setAmount] = useState(defaultAmount);
+  // Juros: pré-preenche com valor devido. Capital: começa vazio (usuário preenche)
+  const [amount, setAmount] = useState(mode === 'interest' ? jurosDevidos : 0);
 
   useEffect(() => {
-    if (capMode === 'full')              setAmount(contract.capital + jurosDevidos);
-    else if (capMode === 'capital-only') setAmount(contract.capital);
+    // Só zera se for modo capital (não interfere no modo juros)
+    if (mode === 'capital') setAmount(0);
   }, [capMode]);
 
   const pagoEmJuros   = capMode === 'full' ? Math.min(amount, jurosDevidos) : 0;
@@ -311,11 +307,13 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
           {/* Valor */}
           <div>
             <label className={lbl}>Valor Recebido (R$)</label>
-            <input type="number" step="0.01" min="0.01" value={amount}
+            <input type="number" step="0.01" min="0.01"
+              value={amount === 0 ? '' : amount}
+              placeholder={mode === 'capital' ? 'Digite o valor recebido...' : ''}
               onChange={e => setAmount(Math.max(0, +e.target.value || 0))}
               className={inp} required />
-            {isFullQuitacao && <p className="text-[10px] text-emerald-400 mt-1.5 font-bold">✓ Quitação total do contrato</p>}
-            {isPartial      && <p className="text-[10px] text-amber-400 mt-1.5 font-bold">⚠ Pagamento parcial — próximo vencimento mantido</p>}
+            {isFullQuitacao && amount > 0 && <p className="text-[10px] text-emerald-400 mt-1.5 font-bold">✓ Quitação total do contrato</p>}
+            {isPartial                      && <p className="text-[10px] text-amber-400 mt-1.5 font-bold">⚠ Pagamento parcial — próximo vencimento mantido</p>}
           </div>
 
           {/* Preview amortização parcial */}
@@ -461,14 +459,109 @@ const ReportsView = ({ dashData, onOpenReport }: { dashData: any; onOpenReport:(
 };
 
 // ── CALCULADORA ───────────────────────────────────────────────
+// ── CLIENTS VIEW ─────────────────────────────────────────────
+const ClientsView = ({ clients, contracts, onEdit, onNewContract, onReload }: {
+  clients: Client[]; contracts: Contract[];
+  onEdit:(c:Client)=>void; onNewContract:(clientId?:number)=>void; onReload:()=>void;
+}) => {
+  const [search, setSearch] = useState('');
+  const filtered = search
+    ? clients.filter(c =>
+        c.name.toLowerCase().includes(search.toLowerCase()) ||
+        (c.cpf||'').includes(search)
+      )
+    : clients;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-black text-white">Clientes</h1>
+        <span className="text-xs text-white/30 font-bold">{clients.length} cadastrado{clients.length!==1?'s':''}</span>
+      </div>
+
+      <div className="relative">
+        <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
+        <input type="text" placeholder="Buscar por nome ou CPF..." value={search}
+          onChange={e=>setSearch(e.target.value)}
+          className={`${inp} pl-10 py-2.5`}/>
+      </div>
+
+      {filtered.length === 0
+        ? <div className={`${card} p-8 text-center text-white/20 text-sm`}>Nenhum cliente encontrado</div>
+        : <div className="space-y-2">
+            {filtered.map(client => {
+              const clientContracts = contracts.filter(c=>c.client_id===client.id && c.status==='ACTIVE');
+              const totalCapital    = clientContracts.reduce((s,c)=>s+c.capital, 0);
+              return (
+                <div key={client.id} className={`${card} p-4`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 flex-shrink-0 bg-blue-500/15 border border-blue-500/20 rounded-xl flex items-center justify-center font-black text-blue-300 text-sm">
+                        {client.name[0].toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-black text-white truncate">{client.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {client.cpf && <span className="text-[10px] text-white/30">{client.cpf}</span>}
+                          {client.phone && <span className="text-[10px] text-white/30">{client.phone}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      <button onClick={()=>onEdit(client)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.05] text-white/30 border border-white/[0.06]">
+                        <Edit size={12}/>
+                      </button>
+                      <button onClick={()=>onNewContract(client.id)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/20">
+                        <PlusCircle size={12}/>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-white/[0.05] flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                        client.status==='ACTIVE'  ? 'bg-emerald-500/15 text-emerald-400' :
+                        client.status==='BLOCKED' ? 'bg-red-500/15 text-red-400' :
+                        'bg-white/[0.08] text-white/30'
+                      }`}>{client.status}</span>
+                      {clientContracts.length > 0 && (
+                        <span className="text-[10px] text-white/30">
+                          {clientContracts.length} contrato{clientContracts.length!==1?'s':''} ativos
+                        </span>
+                      )}
+                    </div>
+                    {totalCapital > 0 && (
+                      <span className="text-sm font-black text-blue-400">{fmtBRL(totalCapital)}</span>
+                    )}
+                    {totalCapital === 0 && (
+                      <span className="text-xs text-white/20">Sem contratos ativos</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+      }
+    </div>
+  );
+};
+
 const CalculatorView = () => {
-  const [capital, setCapital] = useState(1000);
-  const [rate, setRate]       = useState(10);
-  const monthly   = capital * (rate / 100);
-  const annual    = monthly * 12;
-  // Payback: meses para recuperar o capital só com juros
-  const payback   = monthly > 0 ? Math.ceil(capital / monthly) : 0;
-  const progress  = Math.min(100, payback > 0 ? Math.round((1 / payback) * 100) : 0);
+  const [capital,   setCapital]   = useState(1000);
+  const [rate,      setRate]      = useState(10);
+  const [parcelas,  setParcelas]  = useState(12);
+
+  const monthly  = capital * (rate / 100);
+  const annual   = monthly * 12;
+  const payback  = monthly > 0 ? Math.ceil(capital / monthly) : 0;
+  const progress = Math.min(100, payback > 0 ? Math.round((1 / payback) * 100) : 0);
+
+  // Simulação por parcelas: juros simples (capital fixo)
+  const totalJuros  = monthly * parcelas;
+  const totalGeral  = capital + totalJuros;
+  const lucroSobre  = capital > 0 ? ((totalJuros / capital) * 100).toFixed(1) : '0';
 
   return (
     <div className="space-y-5">
@@ -479,25 +572,74 @@ const CalculatorView = () => {
         <div><label className={lbl}>Capital Emprestado (R$)</label>
           <input type="number" value={capital} onChange={e=>setCapital(+e.target.value||0)} className={inp}/>
         </div>
-        <div><label className={lbl}>Juros Mensal (%)</label>
-          <input type="number" step="0.1" value={rate} onChange={e=>setRate(+e.target.value||0)} className={inp}/>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className={lbl}>Juros Mensal (%)</label>
+            <input type="number" step="0.1" value={rate} onChange={e=>setRate(+e.target.value||0)} className={inp}/>
+          </div>
+          <div>
+            <label className={lbl}>Parcelas</label>
+            <select value={parcelas} onChange={e=>setParcelas(+e.target.value)} className={inp}>
+              {Array.from({length:24},(_,i)=>i+1).map(n=>(
+                <option key={n} value={n}>{n}x</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Resultado principal */}
+      {/* Resultado mensal */}
       <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-5 text-center">
         <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-2">Juros Mensal</p>
         <p className="text-3xl font-black text-white">{fmtBRL(monthly)}</p>
         <p className="text-xs text-white/30 mt-1">Anual: {fmtBRL(annual)}</p>
       </div>
 
-      {/* Payback — retorno do capital */}
-      <div className={`${card} p-5`}>
-        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-4">Calculadora de Retorno (Payback)</p>
+      {/* Simulação de parcelas */}
+      <div className={`${card} p-5 space-y-3`}>
+        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">Simulação — {parcelas} parcela{parcelas!==1?'s':''}</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-white/[0.04] rounded-xl p-3 text-center">
+            <p className="text-[9px] text-white/30 uppercase mb-1">Capital</p>
+            <p className="font-black text-white text-sm">{fmtBRL(capital)}</p>
+          </div>
+          <div className="bg-emerald-500/10 rounded-xl p-3 text-center">
+            <p className="text-[9px] text-emerald-400/60 uppercase mb-1">Lucro</p>
+            <p className="font-black text-emerald-400 text-sm">{fmtBRL(totalJuros)}</p>
+          </div>
+          <div className="bg-blue-500/10 rounded-xl p-3 text-center">
+            <p className="text-[9px] text-blue-400/60 uppercase mb-1">Total</p>
+            <p className="font-black text-blue-400 text-sm">{fmtBRL(totalGeral)}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-1 border-t border-white/[0.06]">
+          <span className="text-xs text-white/30">Retorno sobre capital</span>
+          <span className="font-black text-emerald-400">{lucroSobre}%</span>
+        </div>
+        {/* Tabela parcela a parcela */}
+        <div className="max-h-48 overflow-y-auto space-y-1 pt-1">
+          {Array.from({length: parcelas}, (_, i) => {
+            const mes = i + 1;
+            const acum = monthly * mes;
+            const pct  = capital > 0 ? Math.min(100, Math.round((acum / capital) * 100)) : 0;
+            return (
+              <div key={mes} className="flex items-center gap-2 text-xs">
+                <span className="text-white/25 w-8 flex-shrink-0">#{mes}</span>
+                <div className="flex-1 bg-white/[0.05] rounded-full h-1.5">
+                  <div className="bg-blue-500/60 h-1.5 rounded-full transition-all" style={{width:`${pct}%`}}/>
+                </div>
+                <span className="text-white/40 font-black w-20 text-right flex-shrink-0">{fmtBRL(acum)}</span>
+                <span className="text-white/20 w-9 text-right flex-shrink-0">{pct}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
+      {/* Payback */}
+      <div className={`${card} p-5`}>
+        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-4">Ponto de Equilíbrio (Payback)</p>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-xs text-white/40">Ponto de Equilíbrio</p>
             <p className="text-2xl font-black text-emerald-400">{payback > 0 ? `${payback} meses` : '—'}</p>
             <p className="text-[10px] text-white/25 mt-0.5">
               {payback > 0 ? `Em ${payback} meses você recupera ${fmtBRL(capital)} só com juros` : 'Informe capital e taxa'}
@@ -512,28 +654,8 @@ const CalculatorView = () => {
             <span className="absolute text-[10px] font-black text-emerald-400">{progress}%</span>
           </div>
         </div>
-
-        {/* Barra de progresso */}
-        <div className="w-full bg-white/[0.06] rounded-full h-2 mb-3">
+        <div className="w-full bg-white/[0.06] rounded-full h-2">
           <div className="bg-gradient-to-r from-blue-500 to-emerald-500 h-2 rounded-full transition-all duration-500" style={{width:`${progress}%`}}/>
-        </div>
-
-        {/* Tabela meses */}
-        <div className="space-y-1.5 mt-4">
-          {[3,6,12].map(m => {
-            const acumulado = monthly * m;
-            const pct       = capital > 0 ? Math.min(100, Math.round((acumulado / capital) * 100)) : 0;
-            return (
-              <div key={m} className="flex items-center justify-between text-xs">
-                <span className="text-white/30 w-16">{m} meses</span>
-                <div className="flex-1 mx-3 bg-white/[0.05] rounded-full h-1.5">
-                  <div className="bg-blue-500/60 h-1.5 rounded-full" style={{width:`${pct}%`}}/>
-                </div>
-                <span className="text-white/50 font-black w-20 text-right">{fmtBRL(acumulado)}</span>
-                <span className="text-white/25 w-10 text-right">{pct}%</span>
-              </div>
-            );
-          })}
         </div>
       </div>
     </div>
@@ -579,6 +701,106 @@ const ManagementView = ({ user }: { user: AppUser }) => {
         </div>
       </div>
     </div>
+  );
+};
+
+// ── NEW CONTRACT MODAL ───────────────────────────────────────
+const NewContractModal = ({ clients, onClose, onSuccess }: {
+  clients: Client[]; onClose: ()=>void; onSuccess: ()=>void;
+}) => {
+  const [ncSearch,    setNcSearch]    = useState('');
+  const [ncClientId,  setNcClientId]  = useState(0);
+  const [ncCalc,      setNcCalc]      = useState({capital:0, rate:10});
+  const [loading,     setLoading]     = useState(false);
+
+  const ncFiltered = ncSearch.length >= 1
+    ? clients.filter(c =>
+        c.name.toLowerCase().includes(ncSearch.toLowerCase()) ||
+        (c.cpf||'').replace(/\D/g,'').includes(ncSearch.replace(/\D/g,''))
+      ).slice(0, 6)
+    : [];
+  const ncSelected = clients.find(c => c.id === ncClientId);
+
+  return (
+    <Modal title="Novo Empréstimo" onClose={onClose}>
+      <form onSubmit={async e => {
+        e.preventDefault();
+        if (!ncClientId) { alert('Selecione um cliente'); return; }
+        const fd = new FormData(e.target as HTMLFormElement);
+        setLoading(true);
+        try {
+          await api.createContract({
+            client_id:              ncClientId,
+            capital:                parseFloat(fd.get('capital') as string),
+            interest_rate_monthly:  parseFloat(fd.get('rate') as string) / 100,
+            next_due_date:          fd.get('due_date') as string,
+            guarantee_notes:        fd.get('guarantee') as string,
+          });
+          onSuccess();
+        } catch(e: any) { alert(e.message); }
+        finally { setLoading(false); }
+      }} className="space-y-4">
+
+        {/* Busca cliente */}
+        <div>
+          <label className={lbl}>Buscar Cliente</label>
+          <div className="relative">
+            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
+            <input type="text" placeholder="Nome ou CPF..." value={ncSearch}
+              onChange={e => { setNcSearch(e.target.value); setNcClientId(0); }}
+              className={`${inp} pl-10`} autoComplete="off"/>
+          </div>
+          {ncFiltered.length > 0 && (
+            <div className="mt-1 bg-[#13122a] border border-white/[0.08] rounded-xl overflow-hidden">
+              {ncFiltered.map((c: any) => (
+                <button key={c.id} type="button"
+                  onClick={() => { setNcClientId(c.id); setNcSearch(c.name); }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/[0.05] border-b border-white/[0.05] last:border-0 text-left">
+                  <div>
+                    <p className="text-sm font-black text-white">{c.name}</p>
+                    {c.cpf && <p className="text-[10px] text-white/30">{c.cpf}</p>}
+                  </div>
+                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${c.status==='ACTIVE'?'bg-emerald-500/20 text-emerald-400':'bg-white/[0.06] text-white/30'}`}>{c.status}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {ncSelected && (
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+              <div className="w-7 h-7 bg-blue-500/20 rounded-lg flex items-center justify-center text-xs font-black text-blue-300">{ncSelected.name[0]}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-white truncate">{ncSelected.name}</p>
+                {ncSelected.cpf && <p className="text-[10px] text-white/30">{ncSelected.cpf}</p>}
+              </div>
+              <button type="button" onClick={() => { setNcClientId(0); setNcSearch(''); }} className="text-white/30"><X size={13}/></button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className={lbl}>Capital (R$)</label>
+            <input name="capital" type="number" step="0.01"
+              onChange={e => setNcCalc({...ncCalc, capital: +e.target.value||0})}
+              className={inp} required/></div>
+          <div><label className={lbl}>Juros (%)</label>
+            <input name="rate" type="number" step="0.1" defaultValue={10}
+              onChange={e => setNcCalc({...ncCalc, rate: +e.target.value||0})}
+              className={inp} required/></div>
+        </div>
+        <div className="bg-blue-500/10 border border-blue-500/15 rounded-xl p-3 flex justify-between">
+          <span className="text-xs text-white/40 font-bold">Juros Mensal:</span>
+          <span className="text-sm font-black text-blue-400">{fmtBRL(ncCalc.capital*(ncCalc.rate/100))}</span>
+        </div>
+        <div><label className={lbl}>Vencimento</label>
+          <input name="due_date" type="date" defaultValue={format(addMonths(new Date(),1),'yyyy-MM-dd')} className={inp} required/></div>
+        <div><label className={lbl}>Garantia</label>
+          <textarea name="guarantee" className={`${inp} h-16 resize-none`}></textarea></div>
+        <button type="submit" disabled={loading}
+          className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+          {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>CRIANDO...</> : 'CRIAR EMPRÉSTIMO'}
+        </button>
+      </form>
+    </Modal>
   );
 };
 
@@ -738,7 +960,7 @@ export default function App() {
   if(!user)   return <Login onLogin={u=>setUser(u)}/>;
 
   const tabs     = [{id:'dashboard',label:'Home',icon:Home},{id:'loans',label:'Empréstimos',icon:DollarSign},{id:'reports',label:'Relatórios',icon:BookOpen}];
-  const menuItems = [...tabs,...(user.role==='ADMIN'?[{id:'calculator',label:'Calculadora',icon:CalcIcon},{id:'management',label:'Gerenciamento',icon:Settings}]:[])];
+  const menuItems = [...tabs,...(user.role==='ADMIN'?[{id:'clients',label:'Clientes',icon:Users},{id:'calculator',label:'Calculadora',icon:CalcIcon},{id:'management',label:'Gerenciamento',icon:Settings}]:[])];
 
   return (
     <div className="min-h-screen bg-[#0a0918] text-white flex flex-col">
@@ -850,7 +1072,7 @@ export default function App() {
                     onPayCapital={()=>setPayModal({contract,cycle:null,mode:'capital'})}
                     onRenegotiate={()=>{ const cl=clients.find(c=>c.id===contract.client_id); if(cl) setRenegoModal({client:cl,contracts:contracts.filter(c=>c.client_id===cl.id),cycles:dashData?.details?.interestToReceive?.filter((ic:any)=>ic.client_id===cl.id)}); }}
                     onEdit={()=>{ const cl=clients.find(c=>c.id===contract.client_id); if(cl) setEditClientModal(cl); }}
-                    onDelete={()=>setDeleteModal(contract.client_id)}
+                    onDelete={()=>setDeleteModal(contract.id)}
                     onWhatsApp={()=>sendWA(contract,client)}
                     onChangeDue={()=>setChangeDueModal(contract)}
                   />
@@ -870,6 +1092,12 @@ export default function App() {
             api.getReports(s, e).then(setFullReport).catch(()=>{});
           }
         }}/>}
+        {activeTab==='clients' && user.role==='ADMIN' && <ClientsView
+          clients={clients} contracts={contracts}
+          onEdit={c=>setEditClientModal(c)}
+          onNewContract={()=>setNewContractModal(true)}
+          onReload={loadAll}
+        />}
         {activeTab==='calculator' && user.role==='ADMIN' && <CalculatorView/>}
         {activeTab==='management' && user.role==='ADMIN' && <ManagementView user={user}/>}
       </main>
@@ -892,19 +1120,11 @@ export default function App() {
         {receipt&&<ReceiptModal receipt={receipt} onClose={()=>setReceipt(null)}/>}
         {renegoModal&&<Modal title="Renegociar Dívida" onClose={()=>setRenegoModal(null)}><RenegotiateForm client={renegoModal.client} contracts={renegoModal.contracts} cycles={renegoModal.cycles} onClose={()=>setRenegoModal(null)} onSuccess={()=>{setRenegoModal(null);loadAll();}}/></Modal>}
 
-        {newContractModal&&<Modal title="Novo Empréstimo" onClose={()=>setNewContractModal(false)}>
-          <form onSubmit={async e=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);try{await api.createContract({client_id:parseInt(fd.get('client_id') as string),capital:parseFloat(fd.get('capital') as string),interest_rate_monthly:parseFloat(fd.get('rate') as string)/100,next_due_date:fd.get('due_date') as string,guarantee_notes:fd.get('guarantee') as string});setNewContractModal(false);loadAll();}catch(e:any){alert(e.message);}}} className="space-y-4">
-            <div><label className={lbl}>Cliente</label><select name="client_id" className={inp} required><option value="">Selecione...</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className={lbl}>Capital (R$)</label><input name="capital" type="number" step="0.01" onChange={e=>setNewContractCalc({...newContractCalc,capital:+e.target.value||0})} className={inp} required/></div>
-              <div><label className={lbl}>Juros (%)</label><input name="rate" type="number" step="0.1" defaultValue={10} onChange={e=>setNewContractCalc({...newContractCalc,rate:+e.target.value||0})} className={inp} required/></div>
-            </div>
-            <div className="bg-blue-500/10 border border-blue-500/15 rounded-xl p-3 flex justify-between"><span className="text-xs text-white/40 font-bold">Juros Mensal:</span><span className="text-sm font-black text-blue-400">{fmtBRL(newContractCalc.capital*(newContractCalc.rate/100))}</span></div>
-            <div><label className={lbl}>Vencimento</label><input name="due_date" type="date" defaultValue={format(addMonths(new Date(),1),'yyyy-MM-dd')} className={inp} required/></div>
-            <div><label className={lbl}>Garantia</label><textarea name="guarantee" className={`${inp} h-20 resize-none`}></textarea></div>
-            <button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-xl text-sm">CRIAR EMPRÉSTIMO</button>
-          </form>
-        </Modal>}
+        {newContractModal && <NewContractModal
+          clients={clients}
+          onClose={()=>setNewContractModal(false)}
+          onSuccess={()=>{ setNewContractModal(false); loadAll(); }}
+        />}
 
         {newClientModal&&<Modal title="Novo Cliente" onClose={()=>setNewClientModal(false)}>
           <form onSubmit={async e=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);try{await api.createClient({name:fd.get('name') as string,cpf:fd.get('cpf') as string,phone:fd.get('phone') as string,address:fd.get('address') as string,notes:fd.get('notes') as string});setNewClientModal(false);loadAll();}catch(e:any){alert(e.message);}}} className="space-y-4">
@@ -1172,10 +1392,10 @@ export default function App() {
 
         {deleteModal&&<Modal title="Confirmar Exclusão" onClose={()=>setDeleteModal(null)}>
           <div className="space-y-4">
-            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex gap-3"><AlertCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5"/><p className="text-xs text-white/50 leading-relaxed">Isso apaga permanentemente o cliente, contratos, ciclos e pagamentos. Não pode ser desfeito.</p></div>
+            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex gap-3"><AlertCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5"/><p className="text-xs text-white/50 leading-relaxed">Isso apaga permanentemente o empréstimo, ciclos e pagamentos. O cliente permanece cadastrado no sistema.</p></div>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={()=>setDeleteModal(null)} className="bg-white/[0.06] text-white font-black py-3 rounded-xl text-sm border border-white/[0.08]">Cancelar</button>
-              <button onClick={async()=>{ try{await api.deleteClient(deleteModal);setDeleteModal(null);loadAll();}catch(e:any){alert(e.message);} }} className="bg-red-600 text-white font-black py-3 rounded-xl text-sm">Excluir</button>
+              <button onClick={async()=>{ try{await api.deleteContract(deleteModal);setDeleteModal(null);loadAll();}catch(e:any){alert(e.message);} }} className="bg-red-600 text-white font-black py-3 rounded-xl text-sm">Excluir</button>
             </div>
           </div>
         </Modal>}
