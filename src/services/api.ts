@@ -221,6 +221,37 @@ export async function updateClient(id: number, data: {
   if (error) throw new Error(error.message);
 }
 
+export async function createInstallmentContract(data: {
+  client_id: number;
+  capital: number;
+  interest_rate_monthly: number;
+  total_installments: number;
+  first_due_date: string;
+  guarantee_notes?: string;
+}): Promise<number> {
+  const { data: result, error } = await supabase.rpc('create_installment_contract', {
+    p_client_id:             data.client_id,
+    p_capital:               data.capital,
+    p_interest_rate_monthly: data.interest_rate_monthly,
+    p_total_installments:    data.total_installments,
+    p_first_due_date:        data.first_due_date,
+    p_guarantee_notes:       data.guarantee_notes ?? '',
+  });
+  if (error) throw new Error(error.message);
+  return result;
+}
+
+export async function payInstallment(contractId: number, cycleId: number, amount: number): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { error } = await supabase.rpc('pay_installment', {
+    p_contract_id: contractId,
+    p_cycle_id:    cycleId,
+    p_amount:      amount,
+    p_received_by: user?.id,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function deleteContract(contractId: number): Promise<void> {
   const { error } = await supabase.rpc('delete_contract', { p_contract_id: contractId });
   if (error) throw new Error(error.message);
@@ -320,6 +351,7 @@ export async function registerPayment(params: {
   payment_type: 'INTEREST' | 'CAPITAL' | 'PARTIAL' | 'ADVANCE_INTEREST';
   payment_method: 'PIX' | 'CASH';
   next_due_date?: string | null;
+  is_full_quitacao?: boolean;
 }): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   const { error } = await supabase.rpc('register_payment', {
@@ -330,6 +362,7 @@ export async function registerPayment(params: {
     p_payment_method: params.payment_method,
     p_next_due_date:  params.next_due_date ?? null,
     p_received_by:    session?.user.id,
+    p_is_full_quitacao: params.is_full_quitacao ?? false,
   });
   if (error) throw new Error(error.message);
 }
@@ -412,6 +445,21 @@ export async function updateDueDate(contractId: number, newDate: string): Promis
   const { error } = await supabase.rpc('update_due_date', {
     p_contract_id: contractId,
     p_new_date:    newDate,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function editPayment(id: number, newAmount: number): Promise<void> {
+  const { error } = await supabase.rpc('edit_payment', {
+    p_payment_id: id,
+    p_new_amount: newAmount
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deletePayment(id: number): Promise<void> {
+  const { error } = await supabase.rpc('delete_payment', {
+    p_payment_id: id
   });
   if (error) throw new Error(error.message);
 }
