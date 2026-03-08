@@ -228,6 +228,8 @@ export async function createInstallmentContract(data: {
   total_installments: number;
   first_due_date: string;
   guarantee_notes?: string;
+  contract_type?: string;
+  initial_status?: string;
 }): Promise<number> {
   const { data: result, error } = await supabase.rpc('create_installment_contract', {
     p_client_id:             data.client_id,
@@ -236,21 +238,23 @@ export async function createInstallmentContract(data: {
     p_total_installments:    data.total_installments,
     p_first_due_date:        data.first_due_date,
     p_guarantee_notes:       data.guarantee_notes ?? '',
+    p_contract_type:         data.contract_type ?? 'INSTALLMENT',
+    p_initial_status:        data.initial_status ?? 'ACTIVE',
   });
   if (error) throw new Error(error.message);
   return result;
 }
 
 export async function payInstallment(contractId: number, cycleId: number, amount: number): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase.rpc('pay_installment', {
     p_contract_id: contractId,
     p_cycle_id:    cycleId,
     p_amount:      amount,
-    p_received_by: user?.id,
+    p_received_by: (await supabase.auth.getUser()).data.user?.id,
   });
   if (error) throw new Error(error.message);
 }
+
 
 export async function deleteContract(contractId: number): Promise<void> {
   const { error } = await supabase.rpc('delete_contract', { p_contract_id: contractId });
@@ -349,9 +353,8 @@ export async function registerPayment(params: {
   cycle_id?: number | null;
   amount: number;
   payment_type: 'INTEREST' | 'CAPITAL' | 'PARTIAL' | 'ADVANCE_INTEREST';
-  payment_method: 'PIX' | 'CASH';
+  payment_method?: 'PIX' | 'CASH';
   next_due_date?: string | null;
-  is_full_quitacao?: boolean;
 }): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   const { error } = await supabase.rpc('register_payment', {
@@ -359,10 +362,22 @@ export async function registerPayment(params: {
     p_cycle_id:       params.cycle_id ?? null,
     p_amount:         params.amount,
     p_payment_type:   params.payment_type,
-    p_payment_method: params.payment_method,
+    p_payment_method: params.payment_method ?? 'PIX',
     p_next_due_date:  params.next_due_date ?? null,
     p_received_by:    session?.user.id,
-    p_is_full_quitacao: params.is_full_quitacao ?? false,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deletePayment(paymentId: number): Promise<void> {
+  const { error } = await supabase.rpc('delete_payment', { p_payment_id: paymentId });
+  if (error) throw new Error(error.message);
+}
+
+export async function editPayment(paymentId: number, newAmount: number): Promise<void> {
+  const { error } = await supabase.rpc('edit_payment', {
+    p_payment_id: paymentId,
+    p_new_amount: newAmount,
   });
   if (error) throw new Error(error.message);
 }
@@ -436,6 +451,7 @@ export async function getReports(startDate?: string, endDate?: string): Promise<
     totalReceived:    data?.totalReceived    ?? 0,
     interestReceived: data?.interestReceived ?? 0,
     capitalReceived:  data?.capitalReceived  ?? 0,
+    saleReceived:     data?.saleReceived     ?? 0,
     activeContracts:  data?.activeContracts  ?? 0,
     overdueContracts: data?.overdueContracts ?? 0,
     recentPayments:   data?.recentPayments   ?? [],
@@ -449,17 +465,74 @@ export async function updateDueDate(contractId: number, newDate: string): Promis
   if (error) throw new Error(error.message);
 }
 
-export async function editPayment(id: number, newAmount: number): Promise<void> {
-  const { error } = await supabase.rpc('edit_payment', {
-    p_payment_id: id,
-    p_new_amount: newAmount
+// ─── NOTIFICAÇÕES ─────────────────────────────────────────────
+
+export async function createNotification(type: string, title: string, body: string, data?: object): Promise<void> {
+  const { error } = await supabase.rpc('create_notification', {
+    p_type:  type,
+    p_title: title,
+    p_body:  body,
+    p_data:  JSON.stringify(data ?? {}),
+  });
+  if (error) console.warn('Notification error:', error.message);
+}
+
+export async function getNotifications(limit = 50): Promise<any[]> {
+  const { data, error } = await supabase.rpc('get_notifications', { p_limit: limit });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function markNotificationsRead(ids?: number[]): Promise<void> {
+  // Pass actual IDs or omit param to mark all (SQL handles both cases)
+  const params: any = {};
+  if (ids && ids.length > 0) params.p_ids = ids;
+  const { error } = await supabase.rpc('mark_notifications_read', params);
+  if (error) console.warn('markRead error:', error.message);
+}
+
+export async function approveContract(contractId: number): Promise<void> {
+  const { error } = await supabase.rpc('approve_contract', { p_contract_id: contractId });
+  if (error) throw new Error(error.message);
+}
+
+export async function rejectContract(contractId: number, reason = ''): Promise<void> {
+  const { error } = await supabase.rpc('reject_contract', {
+    p_contract_id: contractId,
+    p_reason:      reason,
   });
   if (error) throw new Error(error.message);
 }
 
-export async function deletePayment(id: number): Promise<void> {
-  const { error } = await supabase.rpc('delete_payment', {
-    p_payment_id: id
+// ─── PWA PUSH ─────────────────────────────────────────────────
+
+export async function registerServiceWorker(): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
+  try {
+    await navigator.serviceWorker.register('/sw.js');
+  } catch (e) {
+    console.warn('SW register failed:', e);
+  }
+}
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  const result = await Notification.requestPermission();
+  return result === 'granted';
+}
+
+export function showLocalNotification(title: string, body: string): void {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  navigator.serviceWorker.ready.then(reg => {
+    reg.showNotification(title, {
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      vibrate: [200, 100, 200],
+    });
+  }).catch(() => {
+    // fallback: basic Notification
+    new Notification(title, { body });
   });
-  if (error) throw new Error(error.message);
 }
