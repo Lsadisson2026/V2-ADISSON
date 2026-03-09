@@ -296,6 +296,7 @@ export async function createContract(params: {
   interest_rate_monthly: number; // decimal, ex: 0.10
   next_due_date: string;
   guarantee_notes?: string;
+  initial_status?: string;
 }): Promise<number> {
   const { data: { session } } = await supabase.auth.getSession();
   const { data, error } = await supabase.rpc('create_contract', {
@@ -304,6 +305,7 @@ export async function createContract(params: {
     p_interest_rate_monthly: params.interest_rate_monthly,
     p_next_due_date:         params.next_due_date,
     p_guarantee_notes:       params.guarantee_notes ?? null,
+    p_initial_status:        params.initial_status ?? 'ACTIVE',
     p_created_by:            session?.user.id,
   });
   if (error) throw new Error(error.message);

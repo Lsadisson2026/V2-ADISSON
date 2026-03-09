@@ -1388,7 +1388,12 @@ export default function App() {
         api.getContracts('PENDING_APPROVAL'),
       ]);
       setDashData(dash); setClients(cls); setContracts(conts);
-      setPendingContracts(pending);
+      // Admin vê todos os pendentes; collector vê só os seus
+      if (user?.role === 'ADMIN') {
+        setPendingContracts(pending);
+      } else {
+        setPendingContracts(pending.filter((c:any) => c.created_by === user?.id));
+      }
     } catch{}
   };
 
