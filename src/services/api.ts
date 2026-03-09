@@ -138,18 +138,22 @@ export async function listUsers(): Promise<any[]> {
 // ─── CLIENTES ────────────────────────────────────────────────
 
 export async function getClients(search?: string): Promise<any[]> {
-  let query = supabase
-    .from('clients')
-    .select('*')
-    .order('name', { ascending: true });
+  // Usa RPC SECURITY DEFINER para garantir que collector veja todos os clientes
+  const { data, error } = await supabase.rpc('get_all_clients');
+  if (error) throw new Error(error.message);
+
+  let clients = data ?? [];
 
   if (search) {
-    query = query.or(`name.ilike.%${search}%,cpf.ilike.%${search}%`);
+    const s = search.toLowerCase().replace(/\D/g, '');
+    clients = clients.filter((c: any) =>
+      c.name?.toLowerCase().includes(search.toLowerCase()) ||
+      (c.cpf  || '').replace(/\D/g, '').includes(s) ||
+      (c.phone|| '').replace(/\D/g, '').includes(s)
+    );
   }
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return clients;
 }
 
 export async function getClientDetails(clientId: number): Promise<any> {

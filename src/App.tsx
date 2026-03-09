@@ -988,11 +988,17 @@ const ManagementView = ({ user }: { user: AppUser }) => {
 };
 
 // ── NEW CONTRACT MODAL ───────────────────────────────────────
-const NewContractModal = ({ clients, user, onClose, onSuccess }: {
-  clients: Client[]; user: any; onClose: ()=>void; onSuccess: ()=>void;
+const NewContractModal = ({ clients: initialClients, user, onClose, onSuccess, refreshKey }: {
+  clients: Client[]; user: any; onClose: ()=>void; onSuccess: ()=>void; refreshKey?: number;
 }) => {
-  const [ncSearch,    setNcSearch]    = useState('');
-  const [ncClientId,  setNcClientId]  = useState(0);
+  const [ncSearch,   setNcSearch]   = useState('');
+  const [ncClientId, setNcClientId] = useState(0);
+  const [clientList, setClientList] = useState<Client[]>(initialClients);
+
+  // Busca lista completa do banco ao montar o modal
+  useEffect(() => {
+    api.getClients().then(setClientList).catch(() => setClientList(initialClients));
+  }, []);
   const [loading,     setLoading]     = useState(false);
   const [tipo,        setTipo]        = useState<'REVOLVING'|'INSTALLMENT'>('REVOLVING');
   const [capital,     setCapital]     = useState(0);
@@ -1000,13 +1006,15 @@ const NewContractModal = ({ clients, user, onClose, onSuccess }: {
   const [parcelas,    setParcelas]    = useState(12);
   const [saleParc,    setSaleParc]    = useState(1);  // parcelas da venda (1 = à vista)
 
-  const ncFiltered = ncSearch.length >= 1
-    ? clients.filter(c =>
-        c.name.toLowerCase().includes(ncSearch.toLowerCase()) ||
-        (c.cpf||'').replace(/\D/g,'').includes(ncSearch.replace(/\D/g,''))
-      ).slice(0, 6)
+  const q = ncSearch.trim().toLowerCase();
+  const ncFiltered = q.length >= 1
+    ? clientList.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.cpf  ||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')) ||
+        (c.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))
+      )
     : [];
-  const ncSelected = clients.find(c => c.id === ncClientId);
+  const ncSelected = clientList.find(c => c.id === ncClientId);
 
   // Cálculos em tempo real
   const jurosMensal   = capital * (rate / 100);
@@ -1044,7 +1052,7 @@ const NewContractModal = ({ clients, user, onClose, onSuccess }: {
         });
       }
       const isCollector = user?.role !== 'ADMIN';
-      const clientObj = clients.find(c=>c.id===ncClientId);
+      const clientObj = clientList.find(c=>c.id===ncClientId);
       const tipoLabel = tipo==='INSTALLMENT'?'Parcelado':'Rotativo';
       if(isCollector){
         api.createNotification(
@@ -1094,10 +1102,15 @@ const NewContractModal = ({ clients, user, onClose, onSuccess }: {
           <label className={lbl}>Buscar Cliente</label>
           <div className="relative">
             <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
-            <input type="text" placeholder="Nome ou CPF..." value={ncSearch}
+            <input type="text" placeholder="Nome, CPF ou celular..." value={ncSearch}
               onChange={e => { setNcSearch(e.target.value); setNcClientId(0); }}
-              className={`${inp} pl-10`} autoComplete="off"/>
+              className={`${inp} pl-10`} autoComplete="off" autoFocus/>
           </div>
+          {ncSearch.trim().length > 0 && ncFiltered.length === 0 && (
+            <div className="mt-1 px-3 py-2.5 text-xs text-white/30 bg-[#13122a] border border-white/[0.08] rounded-xl">
+              Nenhum cliente encontrado
+            </div>
+          )}
           {ncFiltered.length > 0 && (
             <div className="mt-1 bg-[#13122a] border border-white/[0.08] rounded-xl overflow-hidden max-h-52 overflow-y-auto">
               {ncFiltered.map((c: any) => (
@@ -1368,12 +1381,14 @@ export default function App() {
 
   const loadAll = async () => {
     try {
-      const [dash,cls,conts] = await Promise.all([api.getDashboard(), api.getClients(), api.getContracts('ACTIVE')]);
+      const [dash,cls,conts,pending] = await Promise.all([
+        api.getDashboard(),
+        api.getClients(),
+        api.getContracts('ACTIVE'),
+        api.getContracts('PENDING_APPROVAL'),
+      ]);
       setDashData(dash); setClients(cls); setContracts(conts);
-      if(user?.role==='ADMIN'){
-        const pending = await api.getContracts('PENDING_APPROVAL');
-        setPendingContracts(pending);
-      }
+      setPendingContracts(pending);
     } catch{}
   };
 
@@ -1468,8 +1483,11 @@ export default function App() {
   if(loading) return <div className="min-h-screen bg-[#0a0918] flex items-center justify-center"><div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-slate-800 flex items-center justify-center animate-pulse"><TrendingUp className="text-white" size={22}/></div></div>;
   if(!user)   return <Login onLogin={u=>setUser(u)}/>;
 
-  const tabs     = [{id:'dashboard',label:'Home',icon:Home},{id:'loans',label:'Empréstimos',icon:DollarSign},{id:'reports',label:'Relatórios',icon:BookOpen}];
-  const menuItems = [...tabs,...(user.role==='ADMIN'?[{id:'clients',label:'Clientes',icon:Users},{id:'calculator',label:'Calculadora',icon:CalcIcon},{id:'management',label:'Gerenciamento',icon:Settings}]:[])];
+  const isAdmin  = user.role === 'ADMIN';
+  const tabs     = isAdmin
+    ? [{id:'dashboard',label:'Home',icon:Home},{id:'loans',label:'Empréstimos',icon:DollarSign},{id:'reports',label:'Relatórios',icon:BookOpen}]
+    : [{id:'dashboard',label:'Home',icon:Home},{id:'loans',label:'Empréstimos',icon:DollarSign}];
+  const menuItems = [...tabs,...(isAdmin?[{id:'clients',label:'Clientes',icon:Users},{id:'calculator',label:'Calculadora',icon:CalcIcon},{id:'management',label:'Gerenciamento',icon:Settings}]:[])];
 
   return (
     <div className="min-h-screen bg-[#0a0918] text-white flex flex-col">
@@ -1530,8 +1548,7 @@ export default function App() {
         {activeTab==='dashboard'&&(
           <div className="space-y-5">
             <div><h1 className="text-xl font-black text-white">Olá, {user.name.split(' ')[0]} 👋</h1><p className="text-white/30 text-sm">Resumo do portfólio</p></div>
-            {user.role==='ADMIN'&&(
-              <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
                 <button onClick={()=>setNewContractModal(true)}
                   className="bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 text-sm shadow-xl shadow-blue-900/20 col-span-2">
                   <PlusCircle size={17}/> Novo Empréstimo
@@ -1540,12 +1557,17 @@ export default function App() {
                   className="bg-white/[0.06] border border-white/[0.08] text-white/70 font-black py-3 rounded-2xl flex items-center justify-center gap-2 text-sm">
                   <Users size={15}/> Cadastrar Cliente
                 </button>
-                <button onClick={()=>setActiveTab('clients')}
-                  className="bg-white/[0.06] border border-white/[0.08] text-white/70 font-black py-3 rounded-2xl flex items-center justify-center gap-2 text-sm">
-                  <Search size={14}/> Ver Clientes
-                </button>
+                {isAdmin
+                  ? <button onClick={()=>setActiveTab('clients')}
+                      className="bg-white/[0.06] border border-white/[0.08] text-white/70 font-black py-3 rounded-2xl flex items-center justify-center gap-2 text-sm">
+                      <Search size={14}/> Ver Clientes
+                    </button>
+                  : <button onClick={()=>setActiveTab('loans')}
+                      className="bg-white/[0.06] border border-white/[0.08] text-white/70 font-black py-3 rounded-2xl flex items-center justify-center gap-2 text-sm">
+                      <DollarSign size={14}/> Ver Empréstimos
+                    </button>
+                }
               </div>
-            )}
 
             {/* ── VENCENDO HOJE + ATRASADOS ── */}
             <div className="grid grid-cols-2 gap-3">
@@ -1587,10 +1609,50 @@ export default function App() {
             <div className="flex items-center justify-between mb-4">
               <h1 className="text-xl font-black text-white">Empréstimos</h1>
               <div className="flex gap-2">
-                {user.role==='ADMIN'&&<button onClick={()=>setNewClientModal(true)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.06] border border-white/[0.07] text-white/50"><Users size={14}/></button>}
+                {isAdmin&&<button onClick={()=>setNewClientModal(true)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.06] border border-white/[0.07] text-white/50"><Users size={14}/></button>}
                 <button onClick={()=>setNewContractModal(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-slate-800 text-white font-black rounded-xl text-xs shadow-lg shadow-blue-900/20"><PlusCircle size={13}/> Empréstimo</button>
               </div>
             </div>
+
+            {/* ── PENDING APPROVAL SECTION ── */}
+            {pendingContracts.length > 0 && (
+              <div className="mb-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 space-y-2">
+                <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-1">
+                  ⏳ Aguardando Confirmação do Admin ({pendingContracts.length})
+                </p>
+                {pendingContracts.map((c:any)=>(
+                  <div key={c.id} className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-black text-white">{c.client_name}</p>
+                        <p className="text-[10px] text-white/40 mt-0.5">
+                          {c.contract_type==='INSTALLMENT'?`Parcelado ${c.total_installments}x`:'Rotativo'}
+                          {' · '}R$ {Number(c.capital).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                          {c.interest_rate_monthly>0?` · ${(c.interest_rate_monthly*100).toFixed(1)}% a.m.`:''}
+                        </p>
+                      </div>
+                      {!isAdmin && (
+                        <span className="text-[9px] font-black text-amber-400 bg-amber-500/20 px-2 py-1 rounded-lg flex-shrink-0">
+                          PENDENTE
+                        </span>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <button onClick={async()=>{try{await api.approveContract(c.id);await loadAll();await loadNotifications();}catch(e:any){alert(e.message);}}}
+                          className="flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white font-black rounded-xl text-xs">
+                          <ThumbsUp size={11}/> Aprovar
+                        </button>
+                        <button onClick={()=>setRejectTarget(c)}
+                          className="flex items-center justify-center gap-1.5 py-2 bg-red-600/80 text-white font-black rounded-xl text-xs">
+                          <ThumbsDown size={11}/> Recusar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="relative mb-3">
               <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
               <input type="text" placeholder="Buscar cliente..." value={search} onChange={e=>setSearch(e.target.value)} className={`${inp} pl-10 py-2.5`}/>
@@ -1638,7 +1700,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab==='reports'    && <ReportsView dashData={dashData} onOpenReport={(t)=>{ 
+        {activeTab==='reports' && isAdmin && <ReportsView dashData={dashData} onOpenReport={(t)=>{ 
           setReportModal(t as any);
           if (t !== 'a-receber') {
             setReportFilter('mes');
@@ -1729,6 +1791,7 @@ export default function App() {
           user={user}
           onClose={()=>setNewContractModal(false)}
           onSuccess={()=>{ setNewContractModal(false); loadAll(); loadNotifications(); }}
+          refreshKey={clients.length + (newContractModal ? 1 : 0)}
         />}
 
         {newClientModal&&<Modal title="Novo Cliente" onClose={()=>setNewClientModal(false)}>
@@ -1840,7 +1903,11 @@ export default function App() {
             ...(dashData?.scheduled||[]),
           ].filter((ic:any) => ic && ic.due_date && ic.status !== 'PAID');
           const aReceberFiltered = clientSearch
-            ? aReceberItems.filter((ic:any)=>ic.client_name?.toLowerCase().includes(clientSearch))
+            ? aReceberItems.filter((ic:any)=>
+                ic.client_name?.toLowerCase().includes(clientSearch) ||
+                (ic.client_phone||'').replace(/\D/g,'').includes(clientSearch.replace(/\D/g,'')) ||
+                (ic.client_cpf||'').replace(/\D/g,'').includes(clientSearch.replace(/\D/g,''))
+              )
             : aReceberItems;
 
           const titles: Record<string,string> = {
@@ -1945,7 +2012,7 @@ export default function App() {
                 {/* Busca por cliente */}
                 <div className="relative">
                   <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
-                  <input type="text" placeholder="Filtrar por cliente..." value={reportClientFilter}
+                  <input type="text" placeholder="Filtrar por nome, telefone ou CPF..." value={reportClientFilter}
                     onChange={e=>setReportClientFilter(e.target.value)}
                     className={`${inp} pl-10 py-2.5`}/>
                 </div>
