@@ -275,7 +275,7 @@ export async function deleteClient(id: number): Promise<void> {
 export async function getContracts(status?: string): Promise<any[]> {
   let query = supabase
     .from('contracts')
-    .select('*, clients!inner(name, phone)')
+    .select('*, clients!inner(id, name, phone, cpf, address, notes)')
     .order('created_at', { ascending: false });
 
   if (status) query = query.eq('status', status);
@@ -285,8 +285,11 @@ export async function getContracts(status?: string): Promise<any[]> {
 
   return (data ?? []).map((c: any) => ({
     ...c,
-    client_name:  c.clients?.name,
-    client_phone: c.clients?.phone,
+    client_name:    c.clients?.name,
+    client_phone:   c.clients?.phone,
+    client_cpf:     c.clients?.cpf,
+    client_address: c.clients?.address,
+    client_notes:   c.clients?.notes,
   }));
 }
 

@@ -1035,7 +1035,7 @@ const NewContractModal = ({ clients: initialClients, user, onClose, onSuccess, r
         await api.createInstallmentContract({
           client_id:             ncClientId,
           capital,
-          interest_rate_monthly: rate / 100,
+          interest_rate_monthly: rate, // RPC divide por 100 internamente
           total_installments:    parcelas,
           first_due_date:        dueDate,
           guarantee_notes:       fd.get('guarantee') as string,
@@ -1045,7 +1045,7 @@ const NewContractModal = ({ clients: initialClients, user, onClose, onSuccess, r
         await api.createContract({
           client_id:             ncClientId,
           capital,
-          interest_rate_monthly: rate / 100,
+          interest_rate_monthly: rate, // RPC divide por 100 internamente
           next_due_date:         dueDate,
           guarantee_notes:       fd.get('guarantee') as string,
           initial_status:        needsApproval ? 'PENDING_APPROVAL' : 'ACTIVE',
@@ -1307,6 +1307,7 @@ export default function App() {
   const [notifications,setNotifications] = useState<any[]>([]);
   const [notifOpen,setNotifOpen]         = useState(false);
   const [pendingContracts,setPendingContracts] = useState<any[]>([]);
+  const [pendingDetail,setPendingDetail]       = useState<any|null>(null);
   const [rejectTarget,setRejectTarget]   = useState<any|null>(null);
   const [rejectReason,setRejectReason]   = useState('');
   const [activeTab,setActiveTab] = useState('loans');
@@ -1636,11 +1637,17 @@ export default function App() {
                           {c.interest_rate_monthly>0?` · ${(c.interest_rate_monthly*100).toFixed(1)}% a.m.`:''}
                         </p>
                       </div>
-                      {!isAdmin && (
-                        <span className="text-[9px] font-black text-amber-400 bg-amber-500/20 px-2 py-1 rounded-lg flex-shrink-0">
-                          PENDENTE
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={()=>setPendingDetail(c)}
+                          className="text-[9px] font-black text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg flex items-center gap-1">
+                          <Eye size={10}/> Ver Ficha
+                        </button>
+                        {!isAdmin && (
+                          <span className="text-[9px] font-black text-amber-400 bg-amber-500/20 px-2 py-1 rounded-lg">
+                            PENDENTE
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {isAdmin && (
                       <div className="grid grid-cols-2 gap-2 mt-2">
@@ -2416,6 +2423,95 @@ export default function App() {
                   </div>
                 ))}
               </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* ── PENDING DETAIL MODAL ─────────────────────────── */}
+        {pendingDetail && (
+          <Modal title="Ficha do Empréstimo" onClose={()=>setPendingDetail(null)}>
+            <div className="space-y-4">
+              <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-4 space-y-2">
+                <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-2">👤 Dados do Cliente</p>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center text-lg font-black text-blue-300">
+                    {pendingDetail.client_name?.[0]?.toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-black text-white text-sm">{pendingDetail.client_name}</p>
+                    <p className="text-[10px] text-white/30">{pendingDetail.client_cpf || 'CPF não informado'}</p>
+                  </div>
+                </div>
+                {pendingDetail.client_phone && (
+                  <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                    <span className="text-white/40">Telefone</span>
+                    <span className="font-bold text-white">{pendingDetail.client_phone}</span>
+                  </div>
+                )}
+                {pendingDetail.client_address && (
+                  <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                    <span className="text-white/40">Endereço</span>
+                    <span className="font-bold text-white text-right max-w-[60%]">{pendingDetail.client_address}</span>
+                  </div>
+                )}
+                {pendingDetail.client_notes && (
+                  <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                    <span className="text-white/40">Observações</span>
+                    <span className="font-bold text-white text-right max-w-[60%]">{pendingDetail.client_notes}</span>
+                  </div>
+                )}
+              </div>
+              <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-4 space-y-2">
+                <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest mb-2">📋 Dados do Empréstimo</p>
+                <div className="flex justify-between text-xs">
+                  <span className="text-white/40">Tipo</span>
+                  <span className="font-black text-white">{pendingDetail.contract_type==='INSTALLMENT'?'Parcelado':'Rotativo'}</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                  <span className="text-white/40">Capital</span>
+                  <span className="font-black text-emerald-400">R$ {Number(pendingDetail.capital).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                  <span className="text-white/40">Taxa</span>
+                  <span className="font-black text-white">{(pendingDetail.interest_rate_monthly*100).toFixed(1)}% ao mês</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                  <span className="text-white/40">{pendingDetail.contract_type==='INSTALLMENT'?'Parcela':'Juros/mês'}</span>
+                  <span className="font-black text-blue-400">R$ {Number(pendingDetail.installment_amount||pendingDetail.monthly_interest_amount||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+                </div>
+                {pendingDetail.contract_type==='INSTALLMENT' && (
+                  <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                    <span className="text-white/40">Parcelas</span>
+                    <span className="font-black text-white">{pendingDetail.total_installments}x</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                  <span className="text-white/40">Vencimento</span>
+                  <span className="font-black text-white">{pendingDetail.next_due_date ? new Date(pendingDetail.next_due_date+'T12:00:00').toLocaleDateString('pt-BR') : '-'}</span>
+                </div>
+                {pendingDetail.guarantee_notes && (
+                  <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                    <span className="text-white/40">Garantia</span>
+                    <span className="font-bold text-white text-right max-w-[60%]">{pendingDetail.guarantee_notes}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs border-t border-white/[0.06] pt-2">
+                  <span className="text-white/40">Solicitado em</span>
+                  <span className="font-bold text-white">{new Date(pendingDetail.created_at).toLocaleDateString('pt-BR')}</span>
+                </div>
+              </div>
+              {isAdmin && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={async()=>{try{await api.approveContract(pendingDetail.id);setPendingDetail(null);await loadAll();await loadNotifications();}catch(e:any){alert(e.message);}}}
+                    className="flex items-center justify-center gap-2 py-3 bg-emerald-600 text-white font-black rounded-2xl text-sm">
+                    <ThumbsUp size={14}/> Aprovar
+                  </button>
+                  <button onClick={()=>{setRejectTarget(pendingDetail);setPendingDetail(null);}}
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600/80 text-white font-black rounded-2xl text-sm">
+                    <ThumbsDown size={14}/> Recusar
+                  </button>
+                </div>
+              )}
             </div>
           </Modal>
         )}
