@@ -1409,10 +1409,9 @@ export default function App() {
   const today = format(new Date(),'yyyy-MM-dd');
   const filtered = enriched.filter(({contract,client})=>{
     const name = (contract.client_name||client?.name||'').toLowerCase();
-    if(search && !name.includes(search.toLowerCase())) return false;
-    if(loanFilter==='today')     return contract.next_due_date===today;
-    if(loanFilter==='overdue')   return contract.next_due_date<today;
-    if(loanFilter==='scheduled') return contract.next_due_date>today;
+    const cpf  = (client?.cpf||'').replace(/\D/g,'');
+    const q    = search.toLowerCase();
+    if(search && !name.includes(q) && !cpf.includes(q.replace(/\D/g,''))) return false;
     return true;
   });
 
@@ -1667,7 +1666,7 @@ export default function App() {
             )}
             <div className="relative mb-3">
               <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25"/>
-              <input type="text" placeholder="Buscar cliente..." value={search} onChange={e=>setSearch(e.target.value)} className={`${inp} pl-10 py-2.5`}/>
+              <input type="text" placeholder="Buscar por nome ou CPF..." value={search} onChange={e=>setSearch(e.target.value)} className={`${inp} pl-10 py-2.5`}/>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
               {([{k:'all',l:`Todos (${counts.all})`},{k:'today',l:`Hoje (${counts.today})`},{k:'overdue',l:`Atraso (${counts.overdue})`},{k:'scheduled',l:`Agendado (${counts.scheduled})`}] as const).map(f=>(
