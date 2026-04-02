@@ -1890,7 +1890,7 @@ export default function App() {
                       const diasAtraso = !isToday ? Math.floor((Date.now()-new Date(ic.due_date).getTime())/86400000) : 0;
                       return (
                         <div key={ic.id} className={`${bgCls} border rounded-xl p-3`}>
-                          <div className="flex justify-between items-start">
+                          <div className="flex justify-between items-start mb-3">
                             <div>
                               <p className="font-black text-white text-sm">{ic.client_name}</p>
                               {!isToday && <p className="text-[10px] text-red-400/70 mt-0.5">{diasAtraso} dia{diasAtraso!==1?'s':''} em atraso</p>}
@@ -1898,26 +1898,52 @@ export default function App() {
                             </div>
                             <p className={`font-black text-sm ${accentCls}`}>{fmtBRL(ic.base_interest_amount)}</p>
                           </div>
-                          <div className="mt-2 flex gap-2">
+                          
+                          {/* 3 botões de pagamento */}
+                          <div className="grid grid-cols-3 gap-1.5 mb-2">
                             <button onClick={()=>{
-                              // Encontra o contrato correspondente
                               const contract = dashData?.all?.find((c:any) => c.id === ic.contract_id);
                               if (contract) {
                                 setPayModal({ contract, cycle: ic, mode: 'interest' });
-                                setDueListModal(null); // Fecha o modal de lista
+                                setDueListModal(null);
                               }
-                            }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-black">
-                              <DollarSign size={11}/> Receber Pagamento
+                            }} className="flex flex-col items-center justify-center py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 text-[10px] font-black">
+                              <DollarSign size={12}/>
+                              <span className="mt-0.5">Juros</span>
                             </button>
-                            {ic.client_phone && (
-                              <button onClick={()=>{
-                                const msg = `Olá ${ic.client_name}, passando para lembrar do pagamento de ${fmtBRL(ic.base_interest_amount)} vencido em ${format(parseDate(ic.due_date),'dd/MM/yyyy')}. 🙏`;
-                                window.open(`https://wa.me/55${ic.client_phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
-                              }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#1e3a8a]/30 text-white/40 text-xs font-black">
-                                <Phone size={11}/> WhatsApp
-                              </button>
-                            )}
+                            
+                            <button onClick={()=>{
+                              const contract = dashData?.all?.find((c:any) => c.id === ic.contract_id);
+                              if (contract) {
+                                setPayModal({ contract, cycle: ic, mode: 'capital' });
+                                setDueListModal(null);
+                              }
+                            }} className="flex flex-col items-center justify-center py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-300 text-[10px] font-black">
+                              <CreditCard size={12}/>
+                              <span className="mt-0.5">Capital</span>
+                            </button>
+                            
+                            <button onClick={()=>{
+                              const contract = dashData?.all?.find((c:any) => c.id === ic.contract_id);
+                              if (contract) {
+                                setQuitacaoModal(contract);
+                                setDueListModal(null);
+                              }
+                            }} className="flex flex-col items-center justify-center py-2 rounded-lg bg-green-600/20 border border-green-500/30 text-green-300 text-[10px] font-black">
+                              <CheckCircle2 size={12}/>
+                              <span className="mt-0.5">Quitar</span>
+                            </button>
                           </div>
+
+                          {/* Botão WhatsApp */}
+                          {ic.client_phone && (
+                            <button onClick={()=>{
+                              const msg = `Olá ${ic.client_name}, passando para lembrar do pagamento de ${fmtBRL(ic.base_interest_amount)} vencido em ${format(parseDate(ic.due_date),'dd/MM/yyyy')}. 🙏`;
+                              window.open(`https://wa.me/55${ic.client_phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
+                            }} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#1e3a8a]/30 text-white/40 text-xs font-black">
+                              <Phone size={11}/> Cobrar via WhatsApp
+                            </button>
+                          )}
                         </div>
                       );
                     })
