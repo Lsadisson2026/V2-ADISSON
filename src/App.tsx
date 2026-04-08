@@ -1365,7 +1365,7 @@ export default function App() {
   const [deleteClientModal,setDeleteClientModal] = useState<any|null>(null);
   const [dueListModal,setDueListModal] = useState<'today'|'overdue'|null>(null);
   const [reportModal,setReportModal]   = useState<'lucro'|'capital'|'a-receber'|null>(null);
-  const [reportFilter,setReportFilter] = useState<'dia'|'semana'|'mes'|'todos'>('mes');
+  const [reportFilter,setReportFilter] = useState<'dia'|'semana'|'mes'|'6meses'|'todos'>('mes');
   const [reportClientFilter,setReportClientFilter] = useState('');
   const [fullReport,setFullReport]     = useState<any>(null);
 
@@ -1510,6 +1510,7 @@ export default function App() {
           if(reportFilter==='dia') return {s:format(d,'yyyy-MM-dd'),e:format(d,'yyyy-MM-dd')};
           if(reportFilter==='semana') return {s:format(new Date(d.getTime()-6*86400000),'yyyy-MM-dd'),e:format(d,'yyyy-MM-dd')};
           if(reportFilter==='mes') return {s:format(new Date(d.getFullYear(),d.getMonth(),1),'yyyy-MM-dd'),e:format(d,'yyyy-MM-dd')};
+          if(reportFilter==='6meses') { const sixMonthsAgo=new Date(d); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth()-6); return {s:format(sixMonthsAgo,'yyyy-MM-dd'),e:format(d,'yyyy-MM-dd')}; }
           return {s:undefined as any,e:undefined as any};
         })();
         api.getReports(s,e).then(setFullReport).catch(()=>{});
@@ -1959,12 +1960,13 @@ export default function App() {
           const isCapital = reportModal === 'capital';
           const isAReceber = reportModal === 'a-receber';
 
-          const filters = [{k:'dia',l:'Hoje'},{k:'semana',l:'Semana'},{k:'mes',l:'Mês'},{k:'todos',l:'Todos'}] as const;
+          const filters = [{k:'dia',l:'Hoje'},{k:'semana',l:'Semana'},{k:'mes',l:'Mês'},{k:'6meses',l:'6 Meses'},{k:'todos',l:'Todos'}] as const;
           const today   = new Date();
           const getRange = (f: string) => {
             if(f==='dia')    return {s:format(today,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')};
             if(f==='semana') { const d=new Date(today); d.setDate(d.getDate()-7); return {s:format(d,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')}; }
             if(f==='mes')    { const d=new Date(today.getFullYear(),today.getMonth(),1); return {s:format(d,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')}; }
+            if(f==='6meses') { const d=new Date(today); d.setMonth(d.getMonth()-6); return {s:format(d,'yyyy-MM-dd'),e:format(today,'yyyy-MM-dd')}; }
             return {s:undefined as any,e:undefined as any};
           };
           const loadReport = async (f: string) => {
@@ -2070,10 +2072,10 @@ export default function App() {
               <div className="space-y-4">
 
                 {/* Filtros de período + exportar PDF */}
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center flex-wrap">
                   {!isAReceber && filters.map(f=>(
                     <button key={f.k} onClick={()=>{ setReportFilter(f.k); loadReport(f.k); }}
-                      className={`flex-1 py-2 rounded-xl text-xs font-black border transition-all ${reportFilter===f.k?'bg-[#2563eb] border-[#3b82f6]/50 text-white':'bg-[#1e3a8a]/20 border-[#1e3a8a80] text-white/40'}`}>
+                      className={`flex-1 min-w-[60px] py-2 rounded-xl text-[10px] font-black border transition-all ${reportFilter===f.k?'bg-[#2563eb] border-[#3b82f6]/50 text-white':'bg-[#1e3a8a]/20 border-[#1e3a8a80] text-white/40'}`}>
                       {f.l}
                     </button>
                   ))}
@@ -2378,6 +2380,7 @@ export default function App() {
             if(reportFilter==='dia'){s=e=format(d,'yyyy-MM-dd');}
             else if(reportFilter==='semana'){e=format(d,'yyyy-MM-dd');s=format(new Date(d.getTime()-6*86400000),'yyyy-MM-dd');}
             else if(reportFilter==='mes'){s=format(new Date(d.getFullYear(),d.getMonth(),1),'yyyy-MM-dd');e=format(d,'yyyy-MM-dd');}
+            else if(reportFilter==='6meses'){const sixMonthsAgo=new Date(d);sixMonthsAgo.setMonth(sixMonthsAgo.getMonth()-6);s=format(sixMonthsAgo,'yyyy-MM-dd');e=format(d,'yyyy-MM-dd');}
             const [newReport] = await Promise.all([
               api.getReports(s||undefined, e||undefined),
               loadAll(),
@@ -2407,6 +2410,7 @@ export default function App() {
                     if(reportFilter==='dia'){s=e=format(d,'yyyy-MM-dd');}
                     else if(reportFilter==='semana'){e=format(d,'yyyy-MM-dd');s=format(new Date(d.getTime()-6*86400000),'yyyy-MM-dd');}
                     else if(reportFilter==='mes'){s=format(new Date(d.getFullYear(),d.getMonth(),1),'yyyy-MM-dd');e=format(d,'yyyy-MM-dd');}
+                    else if(reportFilter==='6meses'){const sixMonthsAgo=new Date(d);sixMonthsAgo.setMonth(sixMonthsAgo.getMonth()-6);s=format(sixMonthsAgo,'yyyy-MM-dd');e=format(d,'yyyy-MM-dd');}
                     const [newReport] = await Promise.all([
                       api.getReports(s||undefined, e||undefined),
                       loadAll(),
