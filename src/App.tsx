@@ -120,11 +120,11 @@ const ConfirmPaymentModal = ({ title, lines, onConfirm, onCancel }: {
 };
 
 // ── INSTALLMENT CARD ─────────────────────────────────────────
-const InstallmentCard = ({ contract, client, cycles, user, onPayInstallment, onQuitacao, onEdit, onDelete, onWhatsApp, onChangeDue }: {
+const InstallmentCard = ({ contract, client, cycles, user, onPayInstallment, onQuitacao, onEdit, onDelete, onWhatsApp, onChangeDue, onArchive }: {
   contract: Contract; client?: Client; cycles: InterestCycle[]; user: AppUser | null;
   onPayInstallment:(cycle:InterestCycle, mode:'parcela'|'capital'|'juros')=>void;
   onQuitacao:()=>void;
-  onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void; onChangeDue:()=>void;
+  onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void; onChangeDue:()=>void; onArchive?:()=>void;
 }) => {
   const [expanded, setExpanded] = useState(false);
   const today     = format(new Date(),'yyyy-MM-dd');
@@ -251,6 +251,7 @@ const InstallmentCard = ({ contract, client, cycles, user, onPayInstallment, onQ
             <button onClick={onChangeDue} title="Alterar vencimento" className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#1e3a8a]/30 border border-[#1e3a8a80] text-white/40"><Clock size={14}/></button>
             <button onClick={onWhatsApp}  className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#3b82f6]/10 border border-[#3b82f6]/60/20 text-[#3b82f6]"><Phone size={13}/></button>
             <button onClick={onEdit}      className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#1e3a8a]/30 border border-[#1e3a8a80] text-white/30"><Edit size={13}/></button>
+            {onArchive && <button onClick={onArchive} title="Arquivar" className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400"><BookOpen size={14}/></button>}
             <button onClick={onDelete}    className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-400"><Trash2 size={14}/></button>
           </>}
         </div>
@@ -324,10 +325,10 @@ const InstallmentPaymentForm = ({ contract, cycle, onSubmit }: {
 };
 
 // ── LOAN CARD ─────────────────────────────────────────────────
-const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, onQuitacao, onRenegotiate, onEdit, onDelete, onWhatsApp, onChangeDue }: {
+const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, onQuitacao, onRenegotiate, onEdit, onDelete, onWhatsApp, onChangeDue, onArchive }: {
   contract: Contract; client?: Client; cycle?: InterestCycle; user: AppUser | null;
   onPayInterest:()=>void; onPayCapital:()=>void; onQuitacao:()=>void; onRenegotiate:()=>void;
-  onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void; onChangeDue:()=>void;
+  onEdit:()=>void; onDelete:()=>void; onWhatsApp:()=>void; onChangeDue:()=>void; onArchive?:()=>void;
 }) => {
   const today     = format(new Date(),'yyyy-MM-dd');
   const isOverdue = contract.next_due_date < today;
@@ -436,6 +437,7 @@ const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, 
           <button onClick={onQuitacao}    className="flex-1 bg-blue-900/40 border border-blue-700 text-blue-300 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1"><CheckCircle2 size={12}/> Quitar</button>
           {user?.role==='ADMIN' && <button onClick={onChangeDue} title="Alterar vencimento" className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-blue-900/40 border border-blue-700 text-white/40 hover:text-blue-300 transition-all"><Clock size={14}/></button>}
           <button onClick={onRenegotiate} className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-blue-900/40 border border-blue-700 text-amber-400"><RotateCcw size={14}/></button>
+          {user?.role==='ADMIN' && onArchive && <button onClick={onArchive} title="Arquivar" className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400"><BookOpen size={14}/></button>}
           {user?.role==='ADMIN' && <button onClick={onDelete} className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-blue-900/40 border border-blue-700 text-red-400"><Trash2 size={14}/></button>}
         </div>
       </div>
@@ -1365,6 +1367,8 @@ export default function App() {
   const [deleteClientModal,setDeleteClientModal] = useState<any|null>(null);
   const [dueListModal,setDueListModal] = useState<'today'|'overdue'|null>(null);
   const [reportModal,setReportModal]   = useState<'lucro'|'capital'|'a-receber'|null>(null);
+  const [archivedModal,setArchivedModal] = useState(false);
+  const [archivedContracts,setArchivedContracts] = useState<any[]>([]);
   const [reportFilter,setReportFilter] = useState<'dia'|'semana'|'mes'|'6meses'|'todos'>('mes');
   const [reportClientFilter,setReportClientFilter] = useState('');
   const [fullReport,setFullReport]     = useState<any>(null);
@@ -1653,6 +1657,7 @@ export default function App() {
             <div className="flex items-center justify-between mb-4">
               <h1 className="text-xl font-black text-white">Empréstimos</h1>
               <div className="flex gap-2">
+                {isAdmin&&<button onClick={async()=>{const archived=await api.getArchivedContracts();setArchivedContracts(archived);setArchivedModal(true);}} className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#1e3a8a]/40 border border-[#2563eb]/80 text-white/50" title="Ver Arquivados"><BookOpen size={14}/></button>}
                 {isAdmin&&<button onClick={()=>setNewClientModal(true)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#1e3a8a]/40 border border-[#2563eb]/80 text-white/50"><Users size={14}/></button>}
                 <button onClick={()=>setNewContractModal(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-800 to-[#0d1f17] text-white font-black rounded-xl text-xs shadow-lg shadow-blue-900/20"><PlusCircle size={13}/> Empréstimo</button>
               </div>
@@ -1742,6 +1747,7 @@ export default function App() {
                       onDelete={()=>setDeleteModal(contract.id)}
                       onWhatsApp={()=>sendWA(contract,client)}
                       onChangeDue={()=>setChangeDueModal(contract)}
+                      onArchive={async()=>{if(confirm('Arquivar este contrato?')){await api.archiveContract(contract.id);await loadAll();}}}
                     />
                   );
                   return (
@@ -1754,6 +1760,7 @@ export default function App() {
                       onDelete={()=>setDeleteModal(contract.id)}
                       onWhatsApp={()=>sendWA(contract,client)}
                       onChangeDue={()=>setChangeDueModal(contract)}
+                      onArchive={async()=>{if(confirm('Arquivar este contrato?')){await api.archiveContract(contract.id);await loadAll();}}}
                     />
                   );
                 })}</AnimatePresence>
@@ -2759,6 +2766,51 @@ export default function App() {
             </div>
           </div>
         </Modal>}
+
+        {/* ── MODAL DE ARQUIVADOS ────────────────────────────── */}
+        {archivedModal && (
+          <Modal title="Contratos Arquivados" onClose={()=>setArchivedModal(false)}>
+            <div className="space-y-3">
+              {archivedContracts.length === 0 ? (
+                <p className="text-center text-white/30 py-8 text-sm">Nenhum contrato arquivado</p>
+              ) : (
+                archivedContracts.map((contract: any) => (
+                  <div key={contract.id} className="bg-[#1e3a8a]/20 border border-[#2563eb]/80 rounded-xl p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className="font-black text-white">{contract.client_name}</p>
+                        <p className="text-[10px] text-white/30 mt-0.5">
+                          {contract.contract_type === 'INSTALLMENT' ? 'Parcelado' : 'Rotativo'} · 
+                          {contract.status === 'FINISHED' ? ' Quitado' : ' Ativo'}
+                        </p>
+                      </div>
+                      <p className="text-sm font-black text-[#3b82f6]">{fmtBRL(contract.capital)}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={async()=>{
+                          if(confirm('Desarquivar este contrato?')){
+                            await api.unarchiveContract(contract.id);
+                            setArchivedModal(false);
+                            await loadAll();
+                          }
+                        }}
+                        className="flex-1 bg-[#2563eb]/20 border border-[#3b82f6]/60/30 text-blue-300 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5">
+                        <RotateCcw size={12}/> Desarquivar
+                      </button>
+                      <button 
+                        onClick={()=>{setDeleteModal(contract.id);setArchivedModal(false);}}
+                        className="flex-1 bg-red-500/10 border border-red-500/20 text-red-400 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5">
+                        <Trash2 size={12}/> Excluir
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Modal>
+        )}
+
       </AnimatePresence>
     </div>
   );

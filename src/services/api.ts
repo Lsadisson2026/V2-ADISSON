@@ -265,6 +265,35 @@ export async function deleteContract(contractId: number): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export async function archiveContract(contractId: number): Promise<void> {
+  const { error } = await supabase.rpc('archive_contract', { p_contract_id: contractId });
+  if (error) throw new Error(error.message);
+}
+
+export async function unarchiveContract(contractId: number): Promise<void> {
+  const { error } = await supabase.rpc('unarchive_contract', { p_contract_id: contractId });
+  if (error) throw new Error(error.message);
+}
+
+export async function getArchivedContracts(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('contracts')
+    .select('*, clients!inner(id, name, phone, cpf, address, notes)')
+    .eq('archived', true)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((c: any) => ({
+    ...c,
+    client_name:    c.clients?.name,
+    client_phone:   c.clients?.phone,
+    client_cpf:     c.clients?.cpf,
+    client_address: c.clients?.address,
+    client_notes:   c.clients?.notes,
+  }));
+}
+
 export async function deleteClient(id: number): Promise<void> {
   const { error } = await supabase.rpc('delete_client', { p_client_id: id });
   if (error) throw new Error(error.message);
@@ -272,13 +301,18 @@ export async function deleteClient(id: number): Promise<void> {
 
 // ─── CONTRATOS ───────────────────────────────────────────────
 
-export async function getContracts(status?: string): Promise<any[]> {
+export async function getContracts(status?: string, includeArchived?: boolean): Promise<any[]> {
   let query = supabase
     .from('contracts')
     .select('*, clients!inner(id, name, phone, cpf, address, notes)')
     .order('created_at', { ascending: false });
 
   if (status) query = query.eq('status', status);
+  
+  // Por padrão, não mostra arquivados
+  if (!includeArchived) {
+    query = query.eq('archived', false);
+  }
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
