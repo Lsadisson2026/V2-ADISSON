@@ -492,7 +492,7 @@ const PaymentForm = ({ contract, cycle, mode, onSubmit }: { contract: Contract; 
         _split_capital: pagoEmJuros > 0.01 && pagoEmCapital > 0.01 ? pagoEmCapital : null,
       };
     } else {
-      return { contract_id: contract.id, cycle_id: null, amount,
+      return { contract_id: contract.id, cycle_id: cycle?.id ?? null, amount,
         payment_type: 'CAPITAL', payment_method: 'PIX',
         next_due_date: isFullQuitacao ? null : nextDate };
     }
@@ -1412,13 +1412,14 @@ export default function App() {
 
   const loadAll = async () => {
     try {
-      const [dash,cls,conts,pending] = await Promise.all([
+      const [dash,cls,conts,pending,archived] = await Promise.all([
         api.getDashboard(),
         api.getClients(),
         api.getContracts('ACTIVE'),
         api.getContracts('PENDING_APPROVAL'),
+        api.getArchivedContracts(),
       ]);
-      setDashData(dash); setClients(cls); setContracts(conts);
+      setDashData(dash); setClients(cls); setContracts(conts); setArchivedContracts(archived);
       // Admin vê todos os pendentes; collector vê só os seus
       if (user?.role === 'ADMIN') {
         setPendingContracts(pending);
@@ -1617,8 +1618,8 @@ export default function App() {
                 }
               </div>
 
-            {/* ── VENCENDO HOJE + ATRASADOS ── */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* ── VENCENDO HOJE + ATRASADOS + ARQUIVADOS ── */}
+            <div className="grid grid-cols-3 gap-3">
               {/* Vencendo Hoje */}
               <button onClick={()=>setDueListModal('today')}
                 className="bg-[#012e2e]/80 border border-amber-600/20 rounded-2xl p-4 text-left active:scale-95 transition-transform">
@@ -1633,6 +1634,13 @@ export default function App() {
                 <p className="text-3xl font-black text-red-400 font-['Space_Mono']">{dashData?.overdue?.length||0}</p>
                 <p className="text-[10px] text-white/25 mt-1">cliente{(dashData?.overdue?.length||0)!==1?'s':''} · toque para ver</p>
               </button>
+              {/* Arquivados */}
+              {isAdmin && <button onClick={async()=>{const archived=await api.getArchivedContracts();setArchivedContracts(archived);setArchivedModal(true);}}
+                className="bg-slate-500/10 border border-slate-500/30 rounded-xl p-4 text-left active:scale-95 transition-transform">
+                <p className="text-[9px] text-slate-400/70 uppercase tracking-wider font-black mb-1">Arquivados</p>
+                <p className="text-3xl font-black text-slate-400 font-['Space_Mono']">{archivedContracts?.length||0}</p>
+                <p className="text-[10px] text-white/25 mt-1">contrato{(archivedContracts?.length||0)!==1?'s':''} · toque para ver</p>
+              </button>}
             </div>
 
 
