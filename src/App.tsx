@@ -7,7 +7,7 @@ import {
   ArrowRight, Search, RefreshCw, Trash2, Edit, ChevronDown,
   Settings, Home, BookOpen, Users, Bell, Clock, CreditCard,
   MessageCircle, RotateCcw, Banknote, Eye, EyeOff,
-  XCircle, ThumbsUp, ThumbsDown, BellRing,
+  XCircle, ThumbsUp, ThumbsDown, BellRing, Archive,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, addMonths, parseISO } from 'date-fns';
@@ -1419,7 +1419,15 @@ export default function App() {
         api.getContracts('PENDING_APPROVAL'),
         api.getArchivedContracts(),
       ]);
-      setDashData(dash); setClients(cls); setContracts(conts); setArchivedContracts(archived);
+      
+      // Filtra contratos arquivados de overdue e today
+      const filteredDash = {
+        ...dash,
+        overdue: (dash.overdue || []).filter((ic: any) => !archived.some((a: any) => a.id === ic.contract_id)),
+        today: (dash.today || []).filter((ic: any) => !archived.some((a: any) => a.id === ic.contract_id)),
+      };
+      
+      setDashData(filteredDash); setClients(cls); setContracts(conts); setArchivedContracts(archived);
       // Admin vê todos os pendentes; collector vê só os seus
       if (user?.role === 'ADMIN') {
         setPendingContracts(pending);
@@ -1958,6 +1966,24 @@ export default function App() {
                               window.open(`https://wa.me/55${ic.client_phone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
                             }} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#1e3a8a]/30 text-white/40 text-xs font-black">
                               <Phone size={11}/> Cobrar via WhatsApp
+                            </button>
+                          )}
+
+                          {/* Botão Arquivar (admin only) */}
+                          {user?.role === 'ADMIN' && (
+                            <button onClick={async ()=>{
+                              const contract = dashData?.all?.find((c:any) => c.id === ic.contract_id);
+                              if (!contract) return;
+                              if (!confirm(`Arquivar contrato de ${ic.client_name}?`)) return;
+                              try {
+                                await api.archiveContract(contract.id);
+                                await loadAll();
+                                setDueListModal(null);
+                              } catch (err: any) {
+                                alert('Erro ao arquivar: ' + err.message);
+                              }
+                            }} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gray-600/20 border border-gray-500/30 text-gray-300 text-xs font-black mt-2">
+                              <Archive size={11}/> Arquivar
                             </button>
                           )}
                         </div>

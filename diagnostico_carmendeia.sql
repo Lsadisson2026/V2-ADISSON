@@ -77,12 +77,4 @@ WHERE cl.name ILIKE '%Carmendeia%'
 GROUP BY c.id, ic.due_date
 HAVING COUNT(*) > 1;
 
--- ============================================================
--- INSTRUÇÕES:
--- 1. Execute QUERY 1 primeiro - me envie o resultado completo
--- 2. Execute QUERY 2 - me envie o resultado
--- 3. Execute QUERY 3 - me envie o resultado
--- 4. Execute QUERY 4 - se retornar algo, me envie
---
--- Com esses resultados, vou saber exatamente o que aconteceu!
--- ============================================================
+-- =====================
