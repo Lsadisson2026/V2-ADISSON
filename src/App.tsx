@@ -1460,9 +1460,9 @@ export default function App() {
     }
     return true;
   }).sort((a, b) => {
-    // Ordena por data de vencimento (next_due_date) - do mais antigo para o mais recente
-    const dateA = a.contract.next_due_date;
-    const dateB = b.contract.next_due_date;
+    // Para parcelados, usa a data do próximo ciclo pendente; para mensais, usa next_due_date
+    const dateA = a.cycle?.due_date || a.contract.next_due_date;
+    const dateB = b.cycle?.due_date || b.contract.next_due_date;
     return dateA.localeCompare(dateB);
   });
 
