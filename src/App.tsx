@@ -75,6 +75,7 @@ const ReceiptModal = ({ receipt, onClose }: { receipt: any; onClose: () => void 
         <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest text-center">Enviar comprovante</p>
         <button onClick={()=>sendWA(false)} className="w-full bg-[#1e3a8a]/40 border border-[#1e3a8a] text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2"><MessageCircle size={14}/> Para Mim (copiar)</button>
         <button onClick={()=>sendWA(true)}  className="w-full bg-blue-600/20 border border-[#1e3a8a]/60 text-[#0CABA8]/80 font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2"><Phone size={14}/> Para o Cliente (WhatsApp)</button>
+        <SendToAnyoneWhatsApp receipt={receipt}/>
         <button onClick={downloadPDF}       className="w-full bg-[#2563eb]/20 border border-[#3b82f6]/60/30 text-blue-300 font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2"><FileText size={14}/> Baixar PDF</button>
         <button onClick={onClose} className="w-full bg-[#1e3a8a]/20 text-white/40 font-bold py-3 rounded-xl text-sm">Fechar</button>
       </div>
@@ -82,14 +83,43 @@ const ReceiptModal = ({ receipt, onClose }: { receipt: any; onClose: () => void 
   );
 };
 
+// ── SEND TO ANYONE WHATSAPP ─────────────────────────────────
+const SendToAnyoneWhatsApp = ({ receipt }: { receipt: any }) => {
+  const sendWhatsApp = () => {
+    const msg = `Comprovante de Pagamento\n\nCliente: ${receipt.client_name}\nTipo: ${receipt.type_label}\nValor: ${fmtBRL(receipt.amount)}\nData: ${format(new Date(),'dd/MM/yyyy HH:mm')}\nSaldo Restante: ${fmtBRL(receipt.remaining)}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');
+  };
+
+  return (
+    <button onClick={sendWhatsApp}
+      className="w-full bg-green-600/10 border border-green-500/20 text-green-300 font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2">
+      <MessageCircle size={14}/> Para Qualquer Um (WhatsApp)
+    </button>
+  );
+};
+
 // ── CONFIRM PAYMENT MODAL ────────────────────────────────────
-const ConfirmPaymentModal = ({ title, lines, onConfirm, onCancel }: {
+const ConfirmPaymentModal = ({ title, lines, onConfirm, onCancel, clientPhone, clientName }: {
   title: string;
   lines: { label: string; value: string; accent?: string }[];
   onConfirm: () => Promise<void>;
   onCancel: () => void;
+  clientPhone?: string;
+  clientName?: string;
 }) => {
   const [loading, setLoading] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState(clientPhone || '');
+  const [showWhatsappInput, setShowWhatsappInput] = useState(false);
+
+  const sendWhatsApp = () => {
+    if (!whatsappPhone.trim()) {
+      alert('Informe um número de WhatsApp');
+      return;
+    }
+    const msg = `Olá ${clientName || 'cliente'}, seu pagamento foi registrado com sucesso! 🎉`;
+    window.open(`https://wa.me/55${whatsappPhone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
+  };
+
   return (
     <Modal title={title} onClose={onCancel}>
       <div className="space-y-4">
@@ -104,6 +134,24 @@ const ConfirmPaymentModal = ({ title, lines, onConfirm, onCancel }: {
         <p className="text-[10px] text-amber-400/70 text-center font-bold">
           ⚠ Confirme antes de registrar. Erros podem ser corrigidos em Relatórios.
         </p>
+
+        {/* WhatsApp Input */}
+        {showWhatsappInput && (
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="Número WhatsApp (ex: 27988960875)"
+              value={whatsappPhone}
+              onChange={(e) => setWhatsappPhone(e.target.value)}
+              className="w-full bg-white/[0.04] border border-white/[0.07] text-white placeholder-white/20 px-4 py-3 rounded-2xl focus:outline-none focus:ring-1 focus:ring-blue-500/50 text-sm"
+            />
+            <button onClick={sendWhatsApp}
+              className="w-full bg-green-600/20 border border-green-500/30 text-green-300 font-black py-2.5 rounded-xl text-sm flex items-center justify-center gap-2">
+              <MessageCircle size={14}/> Enviar WhatsApp
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <button onClick={onCancel}
             className="bg-[#1e3a8a]/40 border border-[#1e3a8a] text-white font-black py-3.5 rounded-xl text-sm">
@@ -1352,7 +1400,7 @@ export default function App() {
   const [payModal,setPayModal]         = useState<{contract:Contract;cycle?:InterestCycle|null;mode:'interest'|'capital'}|null>(null);
   const [installPayModal,setInstallPayModal] = useState<{contract:Contract;cycle:InterestCycle}|null>(null);
   const [quitacaoModal,setQuitacaoModal]   = useState<Contract|null>(null);
-  const [confirmModal,setConfirmModal]     = useState<{title:string;lines:{label:string;value:string;accent?:string}[];onConfirm:()=>Promise<void>}|null>(null);
+  const [confirmModal,setConfirmModal]     = useState<{title:string;lines:{label:string;value:string;accent?:string}[];onConfirm:()=>Promise<void>;clientPhone?:string;clientName?:string}|null>(null);
   const [editPayModal,setEditPayModal]     = useState<any|null>(null);
   const [deletePayConfirm,setDeletePayConfirm] = useState<any|null>(null);
   const [editPaymentTarget,setEditPaymentTarget]   = useState<any>(null);
@@ -1423,8 +1471,14 @@ export default function App() {
       // Filtra contratos arquivados de overdue e today
       const filteredDash = {
         ...dash,
-        overdue: (dash.overdue || []).filter((ic: any) => !archived.some((a: any) => a.id === ic.contract_id)),
-        today: (dash.today || []).filter((ic: any) => !archived.some((a: any) => a.id === ic.contract_id)),
+        overdue: (dash.overdue || []).filter((ic: any) => 
+          !archived.some((a: any) => a.id === ic.contract_id) &&
+          ic.status !== 'PAID'
+        ),
+        today: (dash.today || []).filter((ic: any) => 
+          !archived.some((a: any) => a.id === ic.contract_id) &&
+          ic.status !== 'PAID'
+        ),
       };
       
       setDashData(filteredDash); setClients(cls); setContracts(conts); setArchivedContracts(archived);
@@ -1835,6 +1889,8 @@ export default function App() {
               setConfirmModal({
                 title:'Confirmar Pagamento',
                 lines,
+                clientPhone: ct.client_phone,
+                clientName: ct.client_name,
                 onConfirm: async()=>{ await handlePayment(data); setConfirmModal(null); }
               });
             }}
@@ -2406,7 +2462,7 @@ export default function App() {
         )}
 
         {/* ── CONFIRMAR PAGAMENTO ─────────────────────────── */}
-        {confirmModal && <ConfirmPaymentModal title={confirmModal.title} lines={confirmModal.lines} onConfirm={confirmModal.onConfirm} onCancel={()=>setConfirmModal(null)}/>}
+        {confirmModal && <ConfirmPaymentModal title={confirmModal.title} lines={confirmModal.lines} onConfirm={confirmModal.onConfirm} onCancel={()=>setConfirmModal(null)} clientPhone={confirmModal.clientPhone} clientName={confirmModal.clientName}/>}
 
         {/* ── CONFIRMAR PAGAMENTO ─────────────────────────── */}
 
