@@ -1611,6 +1611,13 @@ export default function App() {
           <span className="font-black text-white text-sm">Capital Rotativo</span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Refresh Button */}
+          <button onClick={async()=>{
+            await loadAll();
+            await loadNotifications();
+          }} className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#1e3a8a]/40 border border-[#2563eb]/80 hover:bg-[#1e3a8a]/60 transition-colors">
+            <RefreshCw size={16} className="text-white/60"/>
+          </button>
           {/* Notification Bell */}
           <button onClick={async()=>{
             setNotifOpen(true);
@@ -1924,18 +1931,18 @@ export default function App() {
           </Modal>
         )}
         {receipt&&<ReceiptModal receipt={receipt} onClose={()=>setReceipt(null)}/>}
-        {renegoModal&&<Modal title="Renegociar Dívida" onClose={()=>setRenegoModal(null)}><RenegotiateForm client={renegoModal.client} contracts={renegoModal.contracts} cycles={renegoModal.cycles} onClose={()=>setRenegoModal(null)} onSuccess={()=>{setRenegoModal(null);loadAll();}}/></Modal>}
+        {renegoModal&&<Modal title="Renegociar Dívida" onClose={()=>setRenegoModal(null)}><RenegotiateForm client={renegoModal.client} contracts={renegoModal.contracts} cycles={renegoModal.cycles} onClose={()=>setRenegoModal(null)} onSuccess={async()=>{setRenegoModal(null);await loadAll();}}/></Modal>}
 
         {newContractModal && <NewContractModal
           clients={clients}
           user={user}
           onClose={()=>setNewContractModal(false)}
-          onSuccess={()=>{ setNewContractModal(false); loadAll(); loadNotifications(); }}
+          onSuccess={async()=>{ setNewContractModal(false); await loadAll(); await loadNotifications(); }}
           refreshKey={clients.length + (newContractModal ? 1 : 0)}
         />}
 
         {newClientModal&&<Modal title="Novo Cliente" onClose={()=>setNewClientModal(false)}>
-          <form onSubmit={async e=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);try{const clientName=fd.get('name') as string;await api.createClient({name:clientName,cpf:fd.get('cpf') as string,phone:fd.get('phone') as string,address:fd.get('address') as string,notes:fd.get('notes') as string});api.createNotification('NEW_CLIENT','Novo cliente cadastrado',`${user?.name||'Cobrador'} cadastrou o cliente ${clientName}.`,{client_name:clientName,created_by_name:user?.name});setNewClientModal(false);loadAll();}catch(e:any){alert(e.message);}}} className="space-y-4">
+          <form onSubmit={async e=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);try{const clientName=fd.get('name') as string;await api.createClient({name:clientName,cpf:fd.get('cpf') as string,phone:fd.get('phone') as string,address:fd.get('address') as string,notes:fd.get('notes') as string});api.createNotification('NEW_CLIENT','Novo cliente cadastrado',`${user?.name||'Cobrador'} cadastrou o cliente ${clientName}.`,{client_name:clientName,created_by_name:user?.name});setNewClientModal(false);await loadAll();}catch(e:any){alert(e.message);}}} className="space-y-4">
             <div><label className={lbl}>Nome</label><input name="name" type="text" className={inp} required/></div>
             <div className="grid grid-cols-2 gap-3"><div><label className={lbl}>CPF</label><input name="cpf" type="text" className={inp}/></div><div><label className={lbl}>Telefone</label><input name="phone" type="text" className={inp} required/></div></div>
             <div><label className={lbl}>Endereço</label><input name="address" type="text" className={inp}/></div>
@@ -1945,7 +1952,7 @@ export default function App() {
         </Modal>}
 
         {editClientModal&&<Modal title="Editar Cliente" onClose={()=>setEditClientModal(null)}>
-          <form onSubmit={async e=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);try{await api.updateClient(editClientModal.id,{name:fd.get('name') as string,cpf:fd.get('cpf') as string,phone:fd.get('phone') as string,address:fd.get('address') as string,notes:fd.get('notes') as string});setEditClientModal(null);loadAll();}catch(e:any){alert(e.message);}}} className="space-y-4">
+          <form onSubmit={async e=>{e.preventDefault();const fd=new FormData(e.target as HTMLFormElement);try{await api.updateClient(editClientModal.id,{name:fd.get('name') as string,cpf:fd.get('cpf') as string,phone:fd.get('phone') as string,address:fd.get('address') as string,notes:fd.get('notes') as string});setEditClientModal(null);await loadAll();}catch(e:any){alert(e.message);}}} className="space-y-4">
             <div><label className={lbl}>Nome</label><input name="name" defaultValue={editClientModal.name} type="text" className={inp} required/></div>
             <div className="grid grid-cols-2 gap-3"><div><label className={lbl}>CPF</label><input name="cpf" defaultValue={editClientModal.cpf} type="text" className={inp}/></div><div><label className={lbl}>Telefone</label><input name="phone" defaultValue={editClientModal.phone} type="text" className={inp}/></div></div>
             <div><label className={lbl}>Endereço</label><input name="address" defaultValue={editClientModal.address} type="text" className={inp}/></div>
@@ -2437,7 +2444,7 @@ export default function App() {
               try {
                 await api.updateDueDate(changeDueModal.id, newDate);
                 setChangeDueModal(null);
-                loadAll();
+                await loadAll();
               } catch(err: any) { alert(err.message); }
             }} className="space-y-4">
               <div className="bg-[#1e3a8a]/20 border border-[#2563eb]/80 rounded-xl p-4">
@@ -2837,7 +2844,7 @@ export default function App() {
                   try {
                     await api.deleteClient(deleteClientModal.id);
                     setDeleteClientModal(null);
-                    loadAll();
+                    await loadAll();
                   } catch(e:any) { alert(e.message); }
                 }} className="bg-red-600 text-white font-black py-3 rounded-xl text-sm">
                   Excluir
@@ -2852,7 +2859,7 @@ export default function App() {
             <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex gap-3"><AlertCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5"/><p className="text-xs text-white/50 leading-relaxed">Isso apaga permanentemente o empréstimo, ciclos e pagamentos. O cliente permanece cadastrado no sistema.</p></div>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={()=>setDeleteModal(null)} className="bg-[#1e3a8a]/40 text-white font-black py-3 rounded-xl text-sm border border-[#1e3a8a]">Cancelar</button>
-              <button onClick={async()=>{ try{await api.deleteContract(deleteModal);setDeleteModal(null);loadAll();}catch(e:any){alert(e.message);} }} className="bg-red-600 text-white font-black py-3 rounded-xl text-sm">Excluir</button>
+              <button onClick={async()=>{ try{await api.deleteContract(deleteModal);setDeleteModal(null);await loadAll();}catch(e:any){alert(e.message);} }} className="bg-red-600 text-white font-black py-3 rounded-xl text-sm">Excluir</button>
             </div>
           </div>
         </Modal>}
