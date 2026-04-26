@@ -1964,7 +1964,9 @@ export default function App() {
         {/* ── LISTA VENCENDO HOJE / ATRASADOS ─────────────────── */}
         {dueListModal && (() => {
           const isToday  = dueListModal === 'today';
-          const items    = isToday ? (dashData?.today||[]) : (dashData?.overdue||[]);
+          const items    = isToday 
+            ? (dashData?.today||[]).filter((ic: any) => ic.status === 'PENDING')
+            : (dashData?.overdue||[]).filter((ic: any) => ic.status === 'PENDING');
           const title    = isToday ? 'Vencendo Hoje' : 'Clientes Atrasados';
           const accentCls = isToday ? 'text-amber-400' : 'text-red-400';
           const bgCls     = isToday ? 'bg-amber-500/10 border-amber-500/20' : 'bg-red-500/10 border-red-500/20';
