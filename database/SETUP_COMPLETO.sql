@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS clients (
   address TEXT,
   notes TEXT,
   status TEXT DEFAULT 'ACTIVE',
-  created_by UUID REFERENCES auth.users(id),
+  created_by UUID REFERENCES profiles(id),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   paid_installments INT DEFAULT 0,
   installment_amount NUMERIC(12,2),
   archived BOOLEAN DEFAULT FALSE,
-  created_by UUID REFERENCES auth.users(id),
+  created_by UUID REFERENCES profiles(id),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS payments (
   amount NUMERIC(12,2) NOT NULL,
   payment_type TEXT NOT NULL,
   payment_method TEXT DEFAULT 'PIX',
-  received_by UUID REFERENCES auth.users(id),
+  received_by UUID REFERENCES profiles(id),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS payments (
 -- Tabela de Notificações
 CREATE TABLE IF NOT EXISTS notifications (
   id BIGSERIAL PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
   type TEXT NOT NULL,
   title TEXT NOT NULL,
   body TEXT,
@@ -349,7 +349,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION create_notification(p_type TEXT, p_title TEXT, p_body TEXT, p_data TEXT DEFAULT NULL) RETURNS VOID AS $$
 BEGIN
   INSERT INTO notifications (user_id, type, title, body, data)
-  SELECT id, p_type, p_title, p_body, p_data::JSONB FROM auth.users LIMIT 1;
+  SELECT id, p_type, p_title, p_body, p_data::JSONB FROM profiles LIMIT 1;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -388,12 +388,12 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 -- Políticas para Clientes
 CREATE POLICY "Clientes visíveis para todos" ON clients FOR SELECT USING (TRUE);
 CREATE POLICY "Clientes criáveis por autenticados" ON clients FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-CREATE POLICY "Clientes editáveis por criador" ON clients FOR UPDATE USING (created_by = auth.uid() OR auth.uid() IN (SELECT id FROM auth.users WHERE email LIKE '%admin%'));
+CREATE POLICY "Clientes editáveis por criador" ON clients FOR UPDATE USING (created_by = auth.uid() OR auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%admin%'));
 
 -- Políticas para Contratos
 CREATE POLICY "Contratos visíveis para todos" ON contracts FOR SELECT USING (TRUE);
 CREATE POLICY "Contratos criáveis por autenticados" ON contracts FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
-CREATE POLICY "Contratos editáveis por criador" ON contracts FOR UPDATE USING (created_by = auth.uid() OR auth.uid() IN (SELECT id FROM auth.users WHERE email LIKE '%admin%'));
+CREATE POLICY "Contratos editáveis por criador" ON contracts FOR UPDATE USING (created_by = auth.uid() OR auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%admin%'));
 
 -- Políticas para Ciclos de Juros
 CREATE POLICY "Ciclos visíveis para todos" ON interest_cycles FOR SELECT USING (TRUE);
@@ -404,7 +404,7 @@ CREATE POLICY "Pagamentos visíveis para todos" ON payments FOR SELECT USING (TR
 CREATE POLICY "Pagamentos criáveis por autenticados" ON payments FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Políticas para Notificações
-CREATE POLICY "Notificações visíveis para o usuário" ON notifications FOR SELECT USING (user_id = auth.uid() OR auth.uid() IN (SELECT id FROM auth.users WHERE email LIKE '%admin%'));
+CREATE POLICY "Notificações visíveis para o usuário" ON notifications FOR SELECT USING (user_id = auth.uid() OR auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%admin%'));
 
 -- Políticas para Perfis
 CREATE POLICY "Perfis visíveis para todos" ON profiles FOR SELECT USING (TRUE);

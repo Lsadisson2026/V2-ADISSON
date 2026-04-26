@@ -387,7 +387,7 @@ const LoanCard = ({ contract, client, cycle, user, onPayInterest, onPayCapital, 
   const lucroTotal= contract.monthly_interest_amount;
   const lucroPercent = lucroTotal > 0 ? Math.round((lucroReal/lucroTotal)*100) : 0;
   const juros     = cycle?.base_interest_amount ?? contract.monthly_interest_amount;
-  const dias      = isOverdue ? Math.floor((Date.now() - parseDate(contract.next_due_date).getTime())/86400000) : 0;
+  const dias      = isOverdue ? Math.floor((new Date(new Date().toISOString().split('T')[0]) - new Date(contract.next_due_date)) / (1000 * 60 * 60 * 24)) : 0;
   const border    = isOverdue ? 'border-red-500/25' : isToday ? 'border-[#3b82f6]/25' : 'border-[#2563eb]/80';
   const glow      = isOverdue ? 'bg-red-500/[0.03]' : isToday ? 'bg-amber-500/[0.03]' : '';
   const clientName = contract.client_name || client?.name || '?';
@@ -1388,6 +1388,7 @@ export default function App() {
   const [activeTab,setActiveTab] = useState('loans');
   const [dashData,setDashData] = useState<any>(null);
   const [loading,setLoading]   = useState(true);
+  const [refreshing,setRefreshing] = useState(false);
   const [menuOpen,setMenuOpen] = useState(false);
   const [clients,setClients]   = useState<Client[]>([]);
   const [contracts,setContracts] = useState<Contract[]>([]);
@@ -1488,7 +1489,9 @@ export default function App() {
       } else {
         setPendingContracts(pending.filter((c:any) => c.created_by === user?.id));
       }
-    } catch{}
+    } catch(e) {
+      console.error('Erro em loadAll:', e);
+    }
   };
 
   const allCycles = dashData ? [...(dashData.overdue||[]),(dashData.today||[]),(dashData.scheduled||[])].flat() : [];
@@ -1613,10 +1616,18 @@ export default function App() {
         <div className="flex items-center gap-2">
           {/* Refresh Button */}
           <button onClick={async()=>{
-            await loadAll();
-            await loadNotifications();
-          }} className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#1e3a8a]/40 border border-[#2563eb]/80 hover:bg-[#1e3a8a]/60 transition-colors">
-            <RefreshCw size={16} className="text-white/60"/>
+            setRefreshing(true);
+            try {
+              await loadAll();
+              await loadNotifications();
+            } catch(e) {
+              console.error('Erro ao atualizar:', e);
+              alert('Erro ao atualizar dados');
+            } finally {
+              setRefreshing(false);
+            }
+          }} disabled={refreshing} className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#1e3a8a]/40 border border-[#2563eb]/80 hover:bg-[#1e3a8a]/60 transition-colors disabled:opacity-50">
+            <RefreshCw size={16} className={`text-white/60 ${refreshing ? 'animate-spin' : ''}`}/>
           </button>
           {/* Notification Bell */}
           <button onClick={async()=>{
@@ -1976,7 +1987,9 @@ export default function App() {
                 {items.length === 0
                   ? <p className="text-center text-white/30 py-8 text-sm">Nenhum cliente {isToday?'vence hoje':'em atraso'}</p>
                   : items.map((ic:any) => {
-                      const diasAtraso = !isToday ? Math.floor((Date.now()-new Date(ic.due_date).getTime())/86400000) : 0;
+                      const hoje = new Date().toISOString().split('T')[0];
+                      const vencimento = ic.due_date;
+                      const diasAtraso = !isToday ? Math.floor((new Date(hoje) - new Date(vencimento)) / (1000 * 60 * 60 * 24)) : 0;
                       return (
                         <div key={ic.id} className={`${bgCls} border rounded-xl p-3`}>
                           <div className="flex justify-between items-start mb-3">
