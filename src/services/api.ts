@@ -246,6 +246,12 @@ export async function createInstallmentContract(data: {
     p_initial_status:        data.initial_status ?? 'ACTIVE',
   });
   if (error) throw new Error(error.message);
+  
+  // Criar ciclo inicial para o contrato parcelado
+  if (data.initial_status !== 'PENDING_APPROVAL') {
+    await supabase.rpc('initialize_installment_contract', { p_contract_id: result });
+  }
+  
   return result;
 }
 
@@ -537,6 +543,17 @@ export async function markNotificationsRead(ids?: number[]): Promise<void> {
 export async function approveContract(contractId: number): Promise<void> {
   const { error } = await supabase.rpc('approve_contract', { p_contract_id: contractId });
   if (error) throw new Error(error.message);
+  
+  // Inicializar ciclo se for contrato parcelado
+  const { data: contract } = await supabase
+    .from('contracts')
+    .select('contract_type')
+    .eq('id', contractId)
+    .single();
+  
+  if (contract?.contract_type === 'INSTALLMENT') {
+    await supabase.rpc('initialize_installment_contract', { p_contract_id: contractId });
+  }
 }
 
 export async function rejectContract(contractId: number, reason = ''): Promise<void> {
